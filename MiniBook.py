@@ -2386,6 +2386,7 @@ def load_station_setup():
 # Functie om rigs.ini in te lezen
 def load_rigs():
     rigs = {}
+
     file_path = RIGS_FILE
     if os.path.exists(file_path):
         with open(file_path, 'r') as f:
@@ -2533,7 +2534,8 @@ continent_map = {
 # Function to fetch prefixes from the JSON file
 def fetch_prefixes():
     try:
-        file_path = data_directory / DXCC_FILE
+        #file_path = data_directory / DXCC_FILE
+        file_path = DXCC_FILE
 
         if not os.path.exists(file_path):
             show_popup_download()
@@ -2831,7 +2833,8 @@ def download_json_file():
         response.raise_for_status()  # Check if request was successful
         
         # Save the downloaded file to the root folder
-        file_path = data_directory / DXCC_FILE
+        #file_path = data_directory / DXCC_FILE
+        file_path = DXCC_FILE
         with open(file_path, 'wb') as file:
             file.write(response.content)
         
