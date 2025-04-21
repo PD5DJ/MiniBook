@@ -13,6 +13,11 @@ Furthermore MiniBook also accepts UDP QSO logging from other software like WSJT-
 
 MiniBook stands out as a truly portable logbook, and packed with everything you need to log, edit, and convert with ease.
 
+---
+
+This is my first serious Python project, developed with the help of ChatGPT.
+If anyone is interested in contributing to the project, you're very welcome to join!
+
 ![Basic Log Window](images/minibook.png)
 
 # MiniBook Logbook Application Manual
