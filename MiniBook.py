@@ -2386,7 +2386,8 @@ def load_station_setup():
 # Functie om rigs.ini in te lezen
 def load_rigs():
     rigs = {}
-    file_path = data_directory / RIGS_FILE
+    #file_path = data_directory / RIGS_FILE
+    file_path = RIGS_FILE
     if os.path.exists(file_path):
         with open(file_path, 'r') as f:
             for line in f:
