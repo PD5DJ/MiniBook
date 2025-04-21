@@ -177,3 +177,64 @@ Uses [K0SWE’s DXCC JSON](https://github.com/k0swe/dxcc-json) for country and c
 The MiniBook Logbook Application helps streamline logging, editing, and managing your ham radio QSOs. With features like station setup, ADIF import/export, and CAT/UDP support, it’s a powerful tool for any amateur radio operator.
 
 ---
+
+
+# 1. Downloading MiniBook
+
+As of now, MiniBook is only available as a Python script due to security concerns related to compiling it into an executable file.
+
+## Access the Project
+
+MiniBook is hosted on GitHub. You can download or clone the project from the following link:
+
+🔗 https://github.com/PD5DJ/MiniBook
+
+## Download Instructions
+
+- Open the GitHub project link above.
+- Click the green “Code” button, then select “Download ZIP” to download the project as a ZIP file, or choose “Clone” to use Git.
+
+# 2. Running and Using MiniBook
+
+Since MiniBook is now a Python script, it requires Python to run.
+
+## Steps to Run
+
+### Install Python (if you haven’t already)
+
+Download the latest version from https://www.python.org/downloads/
+
+### Download MiniBook from the GitHub link above
+
+### Extract the ZIP file (if you downloaded it as a ZIP)
+
+### Install Required Libraries
+
+Before running the program, you need to install the necessary Python libraries.  
+Open a terminal or command prompt, navigate to the extracted MiniBook folder, and run:
+
+pip install -r requirements.txt
+
+or run:
+
+install_libraries.bat
+
+
+### Run the Program
+
+Once the dependencies are installed, start MiniBook by running:
+
+python minibook.py
+
+
+Make sure you’re running this in the same directory where minibook.py and requirements.txt are located.
+
+# 3. File Handling and Storage
+
+**MiniBook Content**: MiniBook stores logbook data in JSON format, using the .mbk file extension. You can load and save your QSO entries through the app.
+
+**Version Control**: Always check the GitHub repository for the latest updates and features.
+
+# 4. Getting Support
+
+If you encounter any issues or need help using MiniBook, feel free to open an issue on the GitHub repository or reach out using the contact information provided there.
