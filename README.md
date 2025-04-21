@@ -1,2 +1,179 @@
 # MiniBook
 Simple compact JSON based logbook with rig control
+
+# The Story Behind MiniBook: A Compact Logbook Solution
+MiniBook was created with a clear vision in mind: to provide radio enthusiasts with a compact, straightforward, and portable logbook solution. Unlike many of the heavier, installation-required programs on the market, MiniBook was designed to be lightweight and easy to use.
+
+With MiniBook, logging a QSO is as simple as it gets, while still capturing all the critical information needed for accurate and complete records. The program includes a powerful ADIF import/export feature, allowing users to share and archive their logs in the widely recognized format.
+
+For those who need to update or correct existing entries, the built-in QSO Editor makes adjustments fast and intuitive. Plus, for those transitioning from other systems, an external tool seamlessly converts existing ADIF logbooks into MiniBook’s dedicated .mbk format, making the switch easy.
+
+Connecting it to almost any radio using Hamlib, MiniBook is able to track frequency and mode.
+Furthermore MiniBook also accepts UDP QSO logging from other software like WSJT-X.
+
+MiniBook stands out as a truly portable logbook, and packed with everything you need to log, edit, and convert with ease.
+
+![Basic Log Window](images/minibook.png)
+
+# MiniBook Logbook Application Manual
+
+## 1. Introduction
+The MiniBook Logbook Application is a user-friendly tool designed to manage your ham radio logbook. It allows you to store, view, and edit your QSO records with ease, while also offering features like file handling, station setup, and logbook management. This manual will guide you through the functions and features available within the program.
+
+## 2. Key Features
+- **QSO Management**: Add, edit, and delete QSO records.
+- **Search Functionality**: Easily search for specific callsigns or other QSO details.
+- **File Handling**: Load and save logbook files in JSON format (.mbk MiniBook files).
+- **Station Setup**: Preset My Callsign, My Locator, and My Location for each QSO.
+- **QSO Viewing**: View, filter, and sort QSO records in a table format.
+- **Logging**: Automatically logs your station setup details with each QSO.
+- **Import / Export ADIF**: Use ADIF format for interoperability with other logging software and contest submissions.
+- **Rig CAT Support**: Supports Hamlib, allowing direct or remote connection to your radio.
+- **UDP QSO Log Support**: Receive QSO logs from other programs like WSJT-X.
+
+## 3. User Interface Overview
+
+### Main Window Menu
+When you open the application, you’ll see the main window to interact with your logbook data.
+
+#### Menu Bar
+
+- **File**
+  - **Load Logbook**: Load a MiniBook `.mbk` file.
+  - **New Logbook**: Create a new MiniBook file.
+  - **Station Setup**: Set global parameters like My Callsign, My Locator, and My Location.
+- **Preferences**
+  - Set UTC Offset.
+  - Setup Radio CAT control.
+  - Setup UDP port QSO Logging (e.g., WSJT-X).
+- **Exit**: Exit MiniBook.
+
+- **Tracking**
+  - **Date/Time**: Enable or disable real-time clock updates.
+  - **Radio Frequency & Mode**: Enable connection to radio or remote `rigctld`.
+
+- **View**
+  - **Logbook**: Open the logbook viewer.
+
+- **Help**
+  - **Key Bindings**: Show keyboard shortcuts.
+  - **About**: View application information.
+
+### Main Window
+Click “New QSO” to open a form and enter:
+- Date
+- Time
+- Callsign
+- Country
+- Sent / Received Reports
+- Mode / Submode
+- Band / Frequency
+- Locator
+- Comment
+
+### QSO Edit Window
+To edit a QSO, select the entry and click “Edit”. You can change any field, including:
+- Date / Time
+- Callsign / Country
+- Sent / Received Reports
+- Mode / Submode / Band / Frequency
+- Locator / Comment
+- My Callsign, Locator, Location
+
+## 4. Station Setup
+
+Set the following details to be automatically included in each QSO:
+- **My Callsign**: Your active callsign.
+- **My Locator**: Your Maidenhead grid locator (e.g., FN31pr).
+- **My Location**: Your physical location (e.g., New York, USA).
+
+## 5. Preferences
+
+### UTC Offset
+- Go to `Preferences > UTC Offset` to configure local-to-UTC conversion.
+
+### Hamlib Rigctld Setup
+Connect MiniBook to your radio:
+- **Port**: Default is `4532`.
+- **Use External Server**: Enter remote IP for `rigctld`.
+- **Radio Setup / Serial Setup**
+  - Choose port, baud rate, data bits, stop bits, handshake.
+  - Set RTS/DTR if needed.
+  - **Update Rate (ms)**: Polling interval.
+  - **Connect Delay (ms)**: For Bluetooth radios (e.g., 2000–10000ms).
+
+### QSO Reception Using UDP (WSJT-X)
+Enable MiniBook to receive QSO logs:
+- **Port**: Set a port and match it in WSJT-X/JTDX.
+
+## 6. File Handling
+
+### Loading a Logbook
+Load a `.mbk` (JSON) file to:
+- View data in tree format, sorted by date/time.
+- Automatically apply saved station setup (Callsign, Locator, Location).
+
+### Saving and Exporting
+Save edited data back to `.mbk` format.
+
+### Import from ADIF
+- Click “Import ADIF” and choose file.
+- The app checks for duplicates and lets you:
+  - Ignore
+  - Add
+  - Overwrite
+
+### Export to ADIF
+- Use the export menu to save your logbook as an ADIF file.
+
+### QSO Data Structure
+Each QSO stores:
+- Date / Time
+- Callsign / Country
+- Sent / Received Reports
+- Mode / Band / Frequency / Submode
+- Locator / Comment
+- Station Info (My Callsign, Locator, Location)
+
+### Automatic Updates
+Station info updates automatically in new QSOs after any changes.
+
+### DXCC Lookup
+Uses [K0SWE’s DXCC JSON](https://github.com/k0swe/dxcc-json) for country and continent data based on callsign.
+
+## 7. Managing QSOs
+
+### Adding a QSO
+- Click “New QSO” and fill out the form, then save.
+
+### Editing a QSO
+- Double-click a QSO in the viewer to edit.
+
+### Deleting a QSO
+- Select and click “Delete”; confirmation required.
+
+### Search Functionality
+- Enter callsign or keyword to filter QSO records.
+
+### Sorting and Filtering
+- Sort by any field.
+- Filter by Callsign, Country, Mode, etc.
+
+## 8. Troubleshooting
+
+### Program Errors
+- Ensure `.mbk` or JSON files are correctly formatted.
+
+### Missing QSO Entries
+- Check that required fields (Date, Time, Callsign) exist.
+
+### Date/Time Errors
+- Format should be `YYYY-MM-DD` and `HH:MM`.
+
+### Bugs or Issues
+- Contact the developer if you experience issues.
+
+## 9. Conclusion
+The MiniBook Logbook Application helps streamline logging, editing, and managing your ham radio QSOs. With features like station setup, ADIF import/export, and CAT/UDP support, it’s a powerful tool for any amateur radio operator.
+
+---
