@@ -88,7 +88,7 @@ import ipaddress
 
 VERSION_NUMBER = ("v1.2.9")
 
-# Choose whether to use the local folder (True) or the APPDATA folder (False)
+# Choose whether to use the local folder (True) or the APPDATA folder (False) for config.ini
 use_local_folder    = False
 
 if use_local_folder:
@@ -2534,7 +2534,6 @@ continent_map = {
 # Function to fetch prefixes from the JSON file
 def fetch_prefixes():
     try:
-        #file_path = data_directory / DXCC_FILE
         file_path = DXCC_FILE
 
         if not os.path.exists(file_path):
@@ -2833,7 +2832,6 @@ def download_json_file():
         response.raise_for_status()  # Check if request was successful
         
         # Save the downloaded file to the root folder
-        #file_path = data_directory / DXCC_FILE
         file_path = DXCC_FILE
         with open(file_path, 'wb') as file:
             file.write(response.content)
