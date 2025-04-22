@@ -1227,6 +1227,31 @@ def log_qso():
         messagebox.showwarning("Warning", "No logbook file loaded!")
         return
 
+    # Strict format checks for date and time
+    date_str = date_var.get()
+    time_str = time_var.get()
+
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_str):
+        messagebox.showerror("Date Format Error", "Date must be in YYYY-MM-DD format (e.g., 2025-04-22)")
+        return
+
+    if not re.fullmatch(r"\d{2}:\d{2}:\d{2}", time_str):
+        messagebox.showerror("Time Format Error", "Time must be in HH:MM:SS format (e.g., 17:17:00)")
+        return
+
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        messagebox.showerror("Invalid Date", "Date is not valid (e.g., 2025-02-30 is not a real date).")
+        return
+
+    try:
+        datetime.strptime(time_str, "%H:%M:%S")
+    except ValueError:
+        messagebox.showerror("Invalid Time", "Time is not valid (e.g., 25:00:00 is not a real time).")
+        return
+
+
     # Get the values from the input fields and combo boxes
     date = date_var.get()
     time = time_var.get()
