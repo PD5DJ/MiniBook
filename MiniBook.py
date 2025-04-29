@@ -2688,11 +2688,11 @@ def update_worked_before_tree(*args):
             return
 
     entered_call = callsign_var.get().strip().upper()
-    if not entered_call or len(entered_call) < 3:
+    if not entered_call or len(entered_call) < 1:
         workedb4_tree.delete(*workedb4_tree.get_children())
         return
 
-    matches = [qso for qso in qso_lines if qso.get("Callsign", "").upper() == entered_call]
+    matches = [qso for qso in qso_lines if qso.get("Callsign", "").upper().startswith(entered_call)]
 
     from datetime import datetime
     def sort_key(qso):

@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import subprocess
+import sys
 import serial.tools.list_ports
 import os
 import configparser
@@ -10,15 +11,19 @@ SETTINGS_FILE = "settings.ini"
 class RigCtlGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Rigctld Server GUI")
+        self.root.title("Hamlib Server")
         self.proc = None
+
+        # Set application icon
+        if os.path.exists('hamlib.ico'):
+            self.root.iconbitmap('hamlib.ico')
 
         # Detect available serial ports
         self.serial_ports = [port.device for port in serial.tools.list_ports.comports()]
         if not self.serial_ports:
             self.serial_ports = ["No ports found"]
 
-        # Read rig models from rigs.ini
+        # Load rig models
         self.rigs = self.load_rigs()
 
         # Create GUI elements
@@ -27,12 +32,17 @@ class RigCtlGUI:
         # Load previously saved settings
         self.load_settings()
 
-        # Configure column weights for proper resizing
+        # Configure column weights
         for i in range(3):
             self.root.grid_columnconfigure(i, weight=1)
 
+        # Autostart server if enabled
+        if self.autostart_var.get():
+            self.status_var.set("Status: Starting server...")
+            self.start_server()
+
     def load_rigs(self):
-        """Load rig models from rigs.ini into a dictionary"""
+        """Load rig models from rigs.ini"""
         rigs = {}
         with open('rigs.ini', 'r', encoding='utf-8') as file:
             for line in file:
@@ -70,7 +80,6 @@ class RigCtlGUI:
         ])
         self.baud_combo.grid(row=row, column=1, columnspan=2, sticky="ew", pady=2)
         row += 1
-
 
         # Server Port
         tk.Label(self.root, text="Server Port:").grid(row=row, column=0, sticky="w", pady=2)
@@ -114,7 +123,7 @@ class RigCtlGUI:
         tk.Radiobutton(hs_frame, text="XON/XOFF", variable=self.handshake_var, value="XONXOFF").pack(side="left")
         row += 1
 
-        # RTS and DTR checkboxes
+        # RTS and DTR
         tk.Label(self.root, text="RTS/DTR:").grid(row=row, column=0, sticky="w", pady=2)
         rtsdtr_frame = tk.Frame(self.root)
         rtsdtr_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=2)
@@ -124,13 +133,19 @@ class RigCtlGUI:
         tk.Checkbutton(rtsdtr_frame, text="DTR ON", variable=self.dtr_var).pack(side="left")
         row += 1
 
-        # Status label
+        # Autostart Checkbox
+        self.autostart_var = tk.BooleanVar()
+        self.autostart_check = tk.Checkbutton(self.root, text="Autostart Server on startup", variable=self.autostart_var)
+        self.autostart_check.grid(row=row, column=0, columnspan=3, sticky="w", pady=5)
+        row += 1
+
+        # Status Label
         self.status_var = tk.StringVar(value="Status: Server stopped")
-        self.status_label = tk.Label(self.root, textvariable=self.status_var, anchor="w", fg="blue")
+        self.status_label = tk.Label(self.root, textvariable=self.status_var, anchor="w", fg="red")
         self.status_label.grid(row=row, column=0, columnspan=3, sticky="ew", pady=5)
         row += 1
 
-        # Start / Stop / Exit buttons
+        # Buttons
         self.start_button = tk.Button(self.root, text="Start Server", command=self.start_server)
         self.start_button.grid(row=row, column=0, sticky="ew", pady=5)
         self.stop_button = tk.Button(self.root, text="Stop Server", command=self.stop_server)
@@ -148,14 +163,14 @@ class RigCtlGUI:
             self.rigctld_path_var.set(filename)
 
     def build_command(self):
-        """Build the command line for starting rigctld.exe"""
+        """Build the rigctld.exe command"""
         rig_number = self.rigs.get(self.rig_var.get(), "3078")
         rts_state = "ON" if self.rts_var.get() else "OFF"
         dtr_state = "ON" if self.dtr_var.get() else "OFF"
         serial_parity = "None"
         serial_handshake = {"None": "None", "RTSCTS": "RTSCTS", "XONXOFF": "XONXOFF"}.get(self.handshake_var.get(), "None")
-
         executable = self.rigctld_path_var.get()
+
         if not os.path.exists(executable):
             raise FileNotFoundError(f"rigctld.exe not found at: {executable}")
 
@@ -165,7 +180,7 @@ class RigCtlGUI:
             "-m", rig_number,
             "-r", self.serial_var.get(),
             "-s", self.baud_var.get(),
-            "--set-conf=data_bits={0},stop_bits={1},serial_parity={2},serial_handshake={3},dtr_state={4},rts_state={5}".format(
+            "--set-conf=data_bits={},stop_bits={},serial_parity={},serial_handshake={},dtr_state={},rts_state={}".format(
                 self.databits_var.get(),
                 self.stopbits_var.get(),
                 serial_parity,
@@ -177,30 +192,33 @@ class RigCtlGUI:
         return cmd
 
     def start_server(self):
-        """Start the rigctld server process"""
+        """Start the rigctld server"""
         if self.proc:
-            messagebox.showwarning("Server Running", "The server is already running!")
             return
 
         try:
             cmd = self.build_command()
-            print("Starting command:", " ".join(cmd))
-            self.proc = subprocess.Popen(cmd)
+            CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
+            self.proc = subprocess.Popen(cmd, creationflags=CREATE_NO_WINDOW)
             self.save_settings()
             self.status_var.set("Status: Server started")
+            self.status_label.config(fg="green")
         except Exception as e:
             messagebox.showerror("Error Starting Server", str(e))
+            self.status_var.set("Status: Server stopped")
+            self.status_label.config(fg="red")
 
     def stop_server(self):
-        """Stop the rigctld server process"""
+        """Stop the rigctld server"""
         if self.proc:
             self.proc.terminate()
             self.proc.wait()
             self.proc = None
             self.status_var.set("Status: Server stopped")
+            self.status_label.config(fg="red")
 
     def exit_program(self):
-        """Ask for confirmation and exit the application"""
+        """Ask for confirmation and exit"""
         if messagebox.askyesno("Exit", "Are you sure you want to exit?"):
             if self.proc:
                 self.stop_server()
@@ -219,7 +237,8 @@ class RigCtlGUI:
             'stop_bits': self.stopbits_var.get(),
             'handshake': self.handshake_var.get(),
             'rts': str(self.rts_var.get()),
-            'dtr': str(self.dtr_var.get())
+            'dtr': str(self.dtr_var.get()),
+            'autostart': str(self.autostart_var.get())
         }
         with open(SETTINGS_FILE, 'w') as configfile:
             config.write(configfile)
@@ -240,6 +259,7 @@ class RigCtlGUI:
             self.handshake_var.set(settings.get('handshake', 'None'))
             self.rts_var.set(settings.getboolean('rts', False))
             self.dtr_var.set(settings.getboolean('dtr', False))
+            self.autostart_var.set(settings.getboolean('autostart', False))
 
 if __name__ == "__main__":
     root = tk.Tk()
