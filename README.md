@@ -15,6 +15,9 @@ MiniBook stands out as a truly portable logbook, and packed with everything you 
 
 ---
 
+## You will need Python installed on your system.
+- https://www.python.org/downloads/
+
 This is my first serious Python project, developed with the help of ChatGPT.
 If anyone is interested in contributing to the project, you're very welcome to join!
 
