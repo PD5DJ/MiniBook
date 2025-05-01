@@ -14,10 +14,6 @@ class RigCtlGUI:
         self.root.title("Hamlib Server")
         self.proc = None
 
-        # Set application icon
-        if os.path.exists('hamlib.ico'):
-            self.root.iconbitmap('hamlib.ico')
-
         # Detect available serial ports
         self.serial_ports = [port.device for port in serial.tools.list_ports.comports()]
         if not self.serial_ports:

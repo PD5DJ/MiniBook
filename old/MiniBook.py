@@ -95,7 +95,7 @@ import time
 import ipaddress
 
 
-VERSION_NUMBER = ("v1.3.0")
+VERSION_NUMBER = ("v1.3.0 Hamlib Client Version")
 
 # Choose whether to use the local folder (True) or the APPDATA folder (False) for config.ini
 use_local_folder    = False
@@ -109,7 +109,6 @@ else:
 
 # Configuration file path
 CONFIG_FILE         = "config.ini"
-RIGS_FILE           = "rigs.ini"
 DXCC_FILE           = "dxcc.json"
 SAT_FILE            = "satellites.txt"
 current_json_file   = None  # logbook file
@@ -1194,19 +1193,20 @@ def export_to_adif():
                 satellite = qso.get('Satellite', '')
 
                 # Append the formatted fields to the record
-                adif_record.append(f"<CALL:{len(callsign)}>{callsign}")
-                adif_record.append(f"<NAME:{len(name)}>{name}")
-                adif_record.append(f"<QSO_DATE:{len(date)}>{date}")
-                adif_record.append(f"<TIME_ON:{len(time)}>{time}")
-                adif_record.append(f"<MODE:{len(mode)}>{mode}")
-                adif_record.append(f"<SUBMODE:{len(mode)}>{submode}")
-                adif_record.append(f"<BAND:{len(band)}>{band}")
-                adif_record.append(f"<FREQ:{len(frequency)}>{frequency}")
-                adif_record.append(f"<RST_SENT:{len(sent)}>{sent}")
-                adif_record.append(f"<RST_RCVD:{len(received)}>{received}")
-                adif_record.append(f"<GRIDSQUARE:{len(locator)}>{locator}")
-                adif_record.append(f"<COMMENT:{len(comment)}>{comment}")
-                adif_record.append(f"<SAT_NAME:{len(satellite)}>{satellite}")
+                adif_record.append(f"<band:{len(band)}>{band}")
+                adif_record.append(f"<call:{len(callsign)}>{callsign}")
+                adif_record.append(f"<comment:{len(comment)}>{comment}")
+                adif_record.append(f"<freq:{len(frequency)}>{frequency}")
+                adif_record.append(f"<mode:{len(mode)}>{mode}")
+                adif_record.append(f"<submode:{len(mode)}>{submode}")
+                adif_record.append(f"<rst_rcvd:{len(received)}>{received}")
+                adif_record.append(f"<rst_sent:{len(sent)}>{sent}")
+                adif_record.append(f"<time_off:{len(time)}>{time}")
+                adif_record.append(f"<time_on:{len(time)}>{time}")
+                adif_record.append(f"<qso_date:{len(date)}>{date}")
+                adif_record.append(f"<gridsquare:{len(locator)}>{locator}")
+                adif_record.append(f"<sat_name:{len(satellite)}>{satellite}")
+                adif_record.append(f"<name:{len(name)}>{name}")
                 
                 # Join the ADIF record and append EOR
                 file.write(" ".join(adif_record) + " <EOR>\n")
@@ -1653,168 +1653,67 @@ def extract_adif_field(record, field_name):
 #
 #########################################################################################
 
-
-# Function to retrieve available serial ports
-#def get_serial_ports():
-#    ports = serial.tools.list_ports.comports()
-#    return [port.device for port in ports]
-
-import sys
-import serial.tools.list_ports
-
 if sys.platform.startswith('win'):
     import winreg
 
-def get_serial_ports():
-    ports = serial.tools.list_ports.comports()
-    return [port.device for port in ports]
-
-def is_serial_port_available(port_name):
-    available_ports = [port.device for port in serial.tools.list_ports.comports()]
-    return port_name in available_ports
-
-def connect_to_rigctld_threaded():
-    """Start rigctld in a separate thread."""
-    thread = threading.Thread(target=connect_to_rigctld, daemon=True)
+def connect_to_hamlib_threaded():
+    """Start hamlib in a separate thread."""
+    thread = threading.Thread(target=connect_to_hamlib, daemon=True)
     thread.start()
 
-# Function to connect to rigctld
-def connect_to_rigctld():
-    global rigctld_process, socket_connection, serial_port, RIGCTLD_PORT, stop_frequency_thread
+# Function to connect to hamlib external server
+def connect_to_hamlib():
+    global hamlib_process, socket_connection, hamlib_PORT, stop_frequency_thread
     
     stop_frequency_thread.clear()
 
-    RIGCTLD_PORT    = config.get('Rigctld_settings', 'rigctld_port', fallback="4532")
-    radio_model     = config.get('Rigctld_settings', 'rigctld_rig_model', fallback="--none--")  # Get Radio model from config.ini   
-    radio_id        = rig_model.get(radio_model)                         # Match model iwht the model from rigs.ini and get ID
-    serial_port     = config.get('Rigctld_settings', 'rigctld_rig_port', fallback="Select a port")
-    baud_rate       = config.get('Rigctld_settings', 'rigctld_rig_baudrate', fallback="9600")
-    polling_rate    = config.get('Rigctld_settings', 'rigctld_polling_rate', fallback="1000")
-    connect_delay   = config.get('Rigctld_settings', 'rigctld_connect_delay', fallback="5000")
-    data_bits       = config.get('Rigctld_settings', 'rigctld_data_bits', fallback=8)
-    stop_bits       = config.get('Rigctld_settings', 'rigctld_stop_bits', fallback=1)
-    handshake       = config.get('Rigctld_settings', 'rigctld_serial_handshake', fallback="--none--")
-    rts_enabled     = config.get('Rigctld_settings', 'rigctld_rts', fallback="OFF")
-    dtr_enabled     = config.get('Rigctld_settings', 'rigctld_dtr', fallback="OFF")
+    hamlib_PORT = config.get('hamlib_settings', 'hamlib_port', fallback="4532")
 
     try:
-        if use_external_server.get():
-            # Use External Server
-            server_ip = external_server_ip.get()
-            server_port = int(RIGCTLD_PORT)
-            print(f"Connect to external rigctld-server at {server_ip}:{server_port}...")
+        # Use External Server
+        server_ip = external_server_ip.get()
+        server_port = int(hamlib_PORT)
+        print(f"Connect to external hamlib-server at {server_ip}:{server_port}...")
 
-            socket_connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            socket_connection.connect((server_ip, server_port))
-            gui_state_control(11)  # Connected status
+        socket_connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        socket_connection.connect((server_ip, server_port))
+        gui_state_control(11)  # Connected status
 
-            # Start thread to update frequency and mode
-            threading.Thread(target=update_frequency_and_mode_thread, daemon=True).start()
+        # Start thread to update frequency and mode
+        threading.Thread(target=update_frequency_and_mode_thread, daemon=True).start()
 
-        else:
-
-            def find_rigctld():
-                # Determine the base directory: where the script or executable is located
-                if getattr(sys, 'frozen', False):  # Check if running as a PyInstaller executable
-                    base_dir = os.path.dirname(sys.executable)
-                else:  # Running as a regular script
-                    base_dir = os.path.dirname(os.path.abspath(__file__))
-
-                # Construct the path to rigctld.exe in the "hamlib" folder
-                rigctld_path = os.path.join(base_dir, "hamlib", "rigctld.exe")
-
-                # Verify that the "hamlib" folder exists
-                hamlib_folder_path = os.path.join(base_dir, "hamlib")
-                if not os.path.exists(hamlib_folder_path):
-                    disconnect_from_rigctld()
-                    messagebox.showerror("Error", "The 'hamlib' folder is missing. Please ensure it is present.")
-                    return None
-
-                # Verify that the file exists and is executable
-                if os.path.exists(rigctld_path) and os.access(rigctld_path, os.X_OK):
-                    #print(f"Rigctld found: {rigctld_path}")
-                    return rigctld_path
-                else:
-                    #print(f"ERROR: Rigctld not found or not executable at: {rigctld_path}")
-                    return None
-
-            # Use the function to find rigctld path
-            rigctld_path = find_rigctld()
-            if not rigctld_path:  # If rigctld is not found or folder is missing, exit the function
-                return  # Exit early if rigctld_path is None
-
-
-            if serial_port == "Select a port" or not serial_port:
-                messagebox.showerror("Error", "Please select a valid serial port.")
-                return
-
-            gui_state_control(10) # Connecting status
-
-            print(f"Rigctld Server Port: {RIGCTLD_PORT}\nRadio Model: {radio_model}\nRadio ID: {radio_id}\nSerial port: {serial_port}\nSpeed: {baud_rate}\nPolling rate: {polling_rate}\nData Bits:{data_bits}\nStop Bits:{stop_bits}\nHandshake: {handshake}\nRTS: {rts_enabled}\nDTR: {dtr_enabled}")
-
-            startupinfo = None
-            if platform.system() == "Windows":
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-
-            rigctld_process = subprocess.Popen(
-                
-                [
-                    rigctld_path, 
-                    "-t", f"{RIGCTLD_PORT}",
-                    "-m", str(radio_id), 
-                    "-r", serial_port, 
-                    "-s", baud_rate, 
-                    "-C", "timeout=1000", 
-                    "-C", "retry=3", 
-                    "-C", f"poll_interval={polling_rate}",  # Use f-string for poll_interval
-                    "-C", f"data_bits={data_bits},stop_bits={stop_bits},serial_handshake={handshake}", 
-                    "-C", f"rts_state={rts_enabled},dtr_state={dtr_enabled}"
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                startupinfo=startupinfo,
-                creationflags=subprocess.CREATE_NO_WINDOW if platform.system() == "Windows" else 0
-            )
-            print(f"Connect delay: {connect_delay}mS")
-            root.after(connect_delay, establish_socket_connection)
 
     except Exception as e:
-        messagebox.showerror("Error", f"Failed to connect to rigctld: {e}")
-        disconnect_from_rigctld()
+        messagebox.showerror("Error", f"Failed to connect to hamlib: {e}")
+        disconnect_from_hamlib()
 
 
 
 
-# Function to establish socket connection after rigctld is started
+# Function to establish socket connection after hamlib is started
 def establish_socket_connection():
-    global socket_connection, use_external_server
+    global socket_connection
     try:
-        if use_external_server.get():
-            server_ip = external_server_ip.get()
-            server_port = int(RIGCTLD_PORT)
-            print(f"Connect to external rigctld-server at {server_ip}:{server_port}...")
-            socket_connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            socket_connection.connect((server_ip, server_port))
-        else:
-            print("Connect to local rigctld-server...")
-            socket_connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            socket_connection.connect(("localhost", int(RIGCTLD_PORT)))
+        server_ip = external_server_ip.get()
+        server_port = int(hamlib_PORT)
+        print(f"Connect to external hamlib-server at {server_ip}:{server_port}...")
+        socket_connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        socket_connection.connect((server_ip, server_port))
 
         gui_state_control(11)  # Connected status
         threading.Thread(target=update_frequency_and_mode_thread, daemon=True).start()
 
     except socket.error as e:
         messagebox.showerror("Error", f"Can not connect!: {e}")
-        disconnect_from_rigctld()
+        disconnect_from_hamlib()
 
 
 
 
 
-# Function to disconnect from rigctld
-def disconnect_from_rigctld():
-    global rigctld_process, socket_connection
+# Function to disconnect from hamlib
+def disconnect_from_hamlib():
+    global hamlib_process, socket_connection
     freqmode_tracking_var.set(False)  # Uncheck the "Frequency / Mode" checkbox
     gui_state_control(12)  # Update to "Disconnected" status
 
@@ -1833,14 +1732,14 @@ def disconnect_from_rigctld():
         finally:
             socket_connection = None
 
-    # Safely terminate rigctld process
-    if rigctld_process:
+    # Safely terminate hamlib process
+    if hamlib_process:
         try:
-            rigctld_process.terminate()
+            hamlib_process.terminate()
         except Exception as e:
-            print(f"Error terminating rigctld process: {e}")  # Log the error
+            print(f"Error terminating hamlib process: {e}")  # Log the error
         finally:
-            rigctld_process = None
+            hamlib_process = None
 
 
 
@@ -1860,11 +1759,11 @@ def handle_rprtx_error(error_code):
 
     # Optionally terminate the connection on critical errors
     if error_code in [-5, -7, -8, -9, -10, -11]:
-        disconnect_from_rigctld()
+        disconnect_from_hamlib()
         
     # Get the error message or fallback to a generic message
-    error_message = error_messages.get(error_code, f"Unknown rigctld error (RPRT {error_code}).")
-    messagebox.showerror("Rigctld Error", error_message)
+    error_message = error_messages.get(error_code, f"Unknown hamlib error (RPRT {error_code}).")
+    messagebox.showerror("hamlib Error", error_message)
 
 
 
@@ -1878,11 +1777,6 @@ def update_frequency_and_mode_thread():
     last_mode = None
 
     while not stop_frequency_thread.is_set():
-        if not use_external_server.get():
-            if not is_serial_port_available(serial_port):
-                messagebox.showerror("Error", f"Serial port {serial_port} is no longer available.")
-                disconnect_from_rigctld()  # Gracefully disconnect
-                break
 
         # Safely check socket_connection
         if socket_connection is None:
@@ -1901,7 +1795,7 @@ def update_frequency_and_mode_thread():
 
             # Convert frequency from Hz to MHz with 3 decimal places
             frequency_mhz = float(frequency_hz) / 1_000_000
-            frequency_var.set(f"{frequency_mhz:.4f}")
+            frequency_var.set(f"{frequency_mhz:.3f}")
 
             # Check socket validity again before sending another request
             if socket_connection is None:
@@ -1926,9 +1820,9 @@ def update_frequency_and_mode_thread():
             filtered_mode = next((m for m in matching_modes if mode.startswith(m)), "No Match")
             # Check if the mode has changed
             if filtered_mode != last_mode:
-                last_mode = filtered_mode  # Update the last_mode
-                mode_var.set(filtered_mode)  # Update the variable
-                on_mode_change()             # Only call if changed!
+                last_mode = filtered_mode       # Update the last_mode
+                mode_var.set(filtered_mode)     # Update the variable
+                on_mode_change()                # Only call if changed!
 
 
         except AttributeError:
@@ -1937,11 +1831,11 @@ def update_frequency_and_mode_thread():
 
         except socket.error as e:
             messagebox.showerror("Error", f"Socket communication error: {e}")
-            disconnect_from_rigctld()
+            disconnect_from_hamlib()
             break
 
         # Wait before the next update (polling interval in seconds)
-        #time.sleep(0.1)  # Adjust this delay as needed
+        #time.sleep(1.0)  # Adjust this delay as needed
 
 
 
@@ -2021,7 +1915,7 @@ def open_station_setup():
 
 # Function for Preference menu
 def open_preferences():
-    global Preference_Window, utc_offset_var, use_external_server, external_server_ip, server_port_var
+    global Preference_Window, utc_offset_var, external_server_ip, server_port_var
 
     # Check if the window is already open
     if Preference_Window is not None and Preference_Window.winfo_exists():
@@ -2036,19 +1930,8 @@ def open_preferences():
     load_window_position(Preference_Window, "PreferenceWindow")
 
     # Load saved radio settings
-    radio_model         = config.get('Rigctld_settings', 'rigctld_rig_model', fallback="--none--")
-    server_port_var     = tk.StringVar(value=config.get('Rigctld_settings', 'rigctld_port', fallback=4532))
-    use_external_server = tk.BooleanVar(value=config.getboolean('Rigctld_settings', 'rigctld_ext', fallback=False))
-    external_server_ip  = tk.StringVar(value=config.get('Rigctld_settings', 'rigctld_ip', fallback="127.0.0.1"))
-    serial_port         = config.get('Rigctld_settings', 'rigctld_rig_port', fallback="Select a port")
-    baud_rate           = config.get('Rigctld_settings', 'rigctld_rig_baudrate', fallback=9600)
-    polling_rate        = config.get('Rigctld_settings', 'rigctld_polling_rate', fallback=1000)
-    connect_delay       = config.get('Rigctld_settings', 'rigctld_connect_delay', fallback=5000)
-    data_bits_var       = config.get('Rigctld_settings', 'rigctld_data_bits', fallback=8)
-    stop_bits_var       = config.get('Rigctld_settings', 'rigctld_stop_bits', fallback=1)
-    handshake_var       = config.get('Rigctld_settings', 'rigctld_serial_handshake', fallback="None")
-    rts_state           = config.get('Rigctld_settings', 'rigctld_rts', fallback="OFF")
-    dtr_state           = config.get('Rigctld_settings', 'rigctld_dtr', fallback="OFF")
+    server_port_var     = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_port', fallback=4532))
+    external_server_ip  = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_ip', fallback="127.0.0.1"))
     wsjtx_port          = config.get('Wsjtx_settings', 'wsjtx_port', fallback="2333")
 
 
@@ -2078,144 +1961,22 @@ def open_preferences():
     # Add horizontal line
     separator = ttk.Separator(Preference_Window, orient='horizontal').grid(row=5, column=0, columnspan=2, sticky='ew', padx=10, pady=5)
 
-    tk.Label(Preference_Window, text="Hamlib Rigctld Setup", font=('Arial', 10, 'bold')).grid(row=6, column=0, columnspan="2", padx=10, pady=1)
+    tk.Label(Preference_Window, text="Hamlib hamlib Setup", font=('Arial', 10, 'bold')).grid(row=6, column=0, columnspan="2", padx=10, pady=1)
 
-    # Rigctld Server port
+    # hamlib Server port
     tk.Label(Preference_Window, text="Port:").grid(row=7, column=0, padx=10, pady=1, sticky='w')
-    server_port_var = tk.StringVar(value=config.get('Rigctld_settings', 'rigctld_port', fallback=4532))
+    server_port_var = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_port', fallback=4532))
     server_port_frame = tk.Frame(Preference_Window)
     for value in ["4532", "4536", "4538", "4540"]:
         tk.Radiobutton(server_port_frame, text=value, variable=server_port_var, value=value).pack(side=tk.LEFT)
     server_port_frame.grid(row=7, column=1, padx=10, pady=1, sticky='w')
-    
-    # Function for logging entries, comboboxes, checkboxes and radio buttons
-    def toggle_external_server(ip_entry):
-        if use_external_server.get():
-            ip_entry.configure(state="normal")
-            port_combobox.configure(state="disabled")
-            baud_combobox.configure(state="disabled")
-            radio_combobox.configure(state="disabled")
-            polling_combobox.state(["disabled"])
-            connect_delay_combobox.state(["disabled"])
-            for radiobutton in data_bits_radiobuttons:
-                radiobutton.configure(state="disabled")
-            for radiobutton in stop_bits_radiobuttons:
-                radiobutton.configure(state="disabled")
-            for radiobutton in handshake_radiobuttons:
-                radiobutton.configure(state="disabled")
-            for checkbox in [rts_checkbutton, dtr_checkbutton]:
-                checkbox.configure(state="disabled")
-        else:
-            ip_entry.configure(state="disabled")
-            port_combobox.configure(state="normal")
-            baud_combobox.configure(state="normal")
-            radio_combobox.configure(state="normal")
-            polling_combobox.state(["!disabled"])
-            connect_delay_combobox.state(["!disabled"])
-            for radiobutton in data_bits_radiobuttons:
-                radiobutton.configure(state="normal")          
-            for radiobutton in stop_bits_radiobuttons:
-                radiobutton.configure(state="normal")
-            for radiobutton in handshake_radiobuttons:
-                radiobutton.configure(state="normal")
-            for checkbox in [rts_checkbutton, dtr_checkbutton]:
-                checkbox.configure(state="normal")                
+            
 
-   # Remote rigctld server settings
-    tk.Label(Preference_Window, text="Use External Server:").grid(row=8, column=0, sticky="w", padx=10, pady=1)
-    external_server_checkbox = tk.Checkbutton(Preference_Window, variable=use_external_server, command=lambda: toggle_external_server(ip_entry))
-    external_server_checkbox.grid(row=8, column=1, sticky="w", padx=10, pady=1)
-
+   # Remote hamlib server settings
     tk.Label(Preference_Window, text="IP-address:").grid(row=9, column=0, sticky="w", padx=10, pady=1)
     ip_entry = tk.Entry(Preference_Window, textvariable=external_server_ip)
     ip_entry.grid(row=9, column=1, padx=10, pady=1, sticky="w")
-    ip_entry.configure(state="disabled")
-
-    tk.Label(Preference_Window, text="Radio Setup", font=('Arial', 10, 'bold')).grid(row=10, column=0, columnspan="2", padx=10, pady=1)
-
-    # Radio selection
-    tk.Label(Preference_Window, text="Select Radio:").grid(row=11, column=0, padx=10, pady=1, sticky='w')
-    selected_radio = tk.StringVar(value=radio_model)
-    radio_combobox = ttk.Combobox(Preference_Window, textvariable=selected_radio, values=list(rig_model.keys()), width=30)
-    radio_combobox.set(radio_model)  # Set the selected radio
-    radio_combobox.grid(row=11, column=1, padx=10, pady=1, sticky='w')
-
-
-    tk.Label(Preference_Window, text="Serial Setup", font=('Arial', 10, 'bold')).grid(row=20, column=0, columnspan="2", padx=10, pady=1)
-
-    # Serial port selection
-    tk.Label(Preference_Window, text="Select Serial Port:").grid(row=21, column=0, padx=10, pady=1, sticky='w')
-    port_combobox = ttk.Combobox(Preference_Window, values=get_serial_ports())
-    port_combobox.set(serial_port)  # Set the selected port
-    port_combobox.grid(row=21, column=1, padx=10, pady=1, sticky='w')
-
-    # Baud rate selection
-    tk.Label(Preference_Window, text="Baud Rate:").grid(row=22, column=0, padx=10, pady=1, sticky='w')
-    baud_combobox = ttk.Combobox(Preference_Window, values=[4800, 9600, 19200, 38400, 57600, 115200])
-    baud_combobox.set(baud_rate)  # Set the selected baud rate
-    baud_combobox.grid(row=22, column=1, padx=10, pady=1, sticky='w')
-
-
-    # Data bits radio buttons
-    tk.Label(Preference_Window, text="Data Bits:").grid(row=23, column=0, padx=10, pady=1, sticky='w')
-    data_bits_var = tk.StringVar(value=config.get('Rigctld_settings', 'rigctld_data_bits', fallback='8'))
-    data_bits_frame = tk.Frame(Preference_Window)
-
-    # Create individual Radiobuttons and pack them
-    data_bits_radiobuttons = []  # List to store the Radiobutton widgets
-    for value in ["7", "8"]:
-        radiobutton = tk.Radiobutton(data_bits_frame, text=value, variable=data_bits_var, value=value)
-        radiobutton.pack(side=tk.LEFT)
-        data_bits_radiobuttons.append(radiobutton)  # Store each Radiobutton
-    data_bits_frame.grid(row=23, column=1, padx=10, pady=1, sticky='w')
-
-    # Stop bits radio buttons
-    tk.Label(Preference_Window, text="Stop Bits:").grid(row=24, column=0, padx=10, pady=1, sticky='w')
-    stop_bits_var = tk.StringVar(value=config.get('Rigctld_settings', 'rigctld_stop_bits', fallback='1'))
-    stop_bits_frame = tk.Frame(Preference_Window)
-    
-    stop_bits_radiobuttons = []
-    for value in ["1", "2"]:
-        radiobutton = tk.Radiobutton(stop_bits_frame, text=value, variable=stop_bits_var, value=value)
-        radiobutton.pack(side=tk.LEFT)
-        stop_bits_radiobuttons.append(radiobutton)
-    stop_bits_frame.grid(row=24, column=1, padx=10, pady=1, sticky='w')
-
-    # Serial handshake radio buttons
-    tk.Label(Preference_Window, text="Handshake:").grid(row=25, column=0, padx=10, pady=1, sticky='w')
-    handshake_var = tk.StringVar(value=config.get('Rigctld_settings', 'rigctld_serial_handshake', fallback='None'))
-    handshake_frame = tk.Frame(Preference_Window)
-    handshake_radiobuttons = []
-    for value in ["None", "RTS/CTS", "XON/XOFF"]:
-        radiobutton = tk.Radiobutton(handshake_frame, text=value, variable=handshake_var, value=value)
-        radiobutton.pack(side=tk.LEFT)
-        handshake_radiobuttons.append(radiobutton)
-    handshake_frame.grid(row=25, column=1, padx=10, pady=1, sticky='w')
-
-    # RTS and DTR checkboxes
-    tk.Label(Preference_Window, text="Serial Signals:").grid(row=26, column=0, padx=10, pady=1, sticky='w')
-    rts_var = tk.StringVar(value=rts_state)
-    rts_checkbutton = tk.Checkbutton(Preference_Window, text="RTS Enabled", variable=rts_var, onvalue="ON", offvalue="OFF")
-    rts_checkbutton.grid(row=26, column=1, padx=10, sticky='w')
-
-    dtr_var = tk.StringVar(value=dtr_state)
-    dtr_checkbutton = tk.Checkbutton(Preference_Window, text="DTR Enabled", variable=dtr_var, onvalue="ON", offvalue="OFF")
-    dtr_checkbutton.grid(row=27, column=1, padx=10, sticky='w')
-
-
-    # Update rate selection
-    tk.Label(Preference_Window, text="Update Rate (ms):").grid(row=28, column=0, padx=10, pady=1, sticky='w')
-    polling_combobox = ttk.Combobox(Preference_Window, values=[100, 250, 500, 1000, 2000, 5000])
-    polling_combobox.set(polling_rate)  # Set the selected polling rate
-    polling_combobox.grid(row=28, column=1, padx=10, pady=1, sticky='w')
-
-    # Connect Delay selection
-    tk.Label(Preference_Window, text="Connect delay (ms):").grid(row=29, column=0, padx=10, pady=1, sticky='w')
-    connect_delay_combobox = ttk.Combobox(Preference_Window, values=[100, 250, 500, 1000, 2000, 5000, 10000])
-    connect_delay_combobox.set(connect_delay)  # Set the selected connection delay
-    connect_delay_combobox.grid(row=29, column=1, padx=10, pady=1, sticky='w')
-
-    tk.Label(Preference_Window, text="Increase delay with Bluetooth devices", font=('Arial', 8, 'bold')).grid(row=30, column=0, columnspan="2", padx=10, pady=1)
+    ip_entry.configure(state="normal")
 
     separator = ttk.Separator(Preference_Window, orient='horizontal').grid(row=31, column=0, columnspan=2, sticky='ew', padx=10, pady=5)
 
@@ -2228,21 +1989,6 @@ def open_preferences():
     wsjtx_port_entry.grid(row=41, column=1, padx=10, pady=1, sticky='w')
 
     separator = ttk.Separator(Preference_Window, orient='horizontal').grid(row=50, column=0, columnspan=2, sticky='ew', padx=10, pady=5)
-
-
-    # Function to enable/disable port and baud comboboxes
-    def toggle_comboboxes(*args):
-        if selected_radio.get() == "--none--":
-            port_combobox.state(["disabled"])
-            baud_combobox.state(["disabled"])
-            polling_combobox.state(["disabled"])
-            connect_delay_combobox.state(["disabled"])
-        else:
-            port_combobox.state(["!disabled"])
-            baud_combobox.state(["!disabled"])
-            polling_combobox.state(["!disabled"])
-            connect_delay_combobox.state(["!disabled"])
-
 
 
     # Checks if IP address is valid
@@ -2281,13 +2027,6 @@ def open_preferences():
         
         save_preferences() # If both are valid, save preferences
     
-    selected_radio.trace_add('write', toggle_comboboxes) # Attach the toggle function to the radio combobox variable
-
-
-    toggle_comboboxes()     # Initialize the state of comboboxes
-    
-    toggle_external_server(ip_entry) # Start init state of fields
-
     def close_window():
         global Preference_Window
         save_window_geometry(Preference_Window, "PreferenceWindow")
@@ -2296,17 +2035,7 @@ def open_preferences():
 
     # Save button
     def save_preferences():
-        
-        radio_model = radio_combobox.get()
-        if radio_model == "--none--" and not use_external_server.get():
-            tracking_menu.entryconfig("Radio Frequency & Mode", state="disabled")
-            gui_state_control(20) # No radio availabe status
-        else:
-            tracking_menu.entryconfig("Radio Frequency & Mode", state="normal")
-            gui_state_control(12) # Disconnect status
-        
-        radio_id = rig_model.get(radio_model)
-        
+         
         # Only save the 'reload_last_logbook' if the key exists in the config
         if 'reload_last_logbook' in config['General']:
             # Save Reload Last Logbook preference only if a logbook is loaded
@@ -2316,29 +2045,16 @@ def open_preferences():
                 # Ensure the setting is reset if no logbook is loaded
                 config['General']['reload_last_logbook'] = "False"
         config['Global_settings']['utc_offset'] = utc_offset_var.get()
-        config['Rigctld_settings']['rigctld_port'] = server_port_var.get()
-        config['Rigctld_settings']['rigctld_ip'] = external_server_ip.get()
-        config['Rigctld_settings']['rigctld_ext'] = str(use_external_server.get())
-        config['Rigctld_settings']['rigctld_rig_model'] = radio_model
-        config['Rigctld_settings']['rigctld_rig_id'] = str(radio_id)  # Save radio ID
-        config['Rigctld_settings']['rigctld_rig_port'] = port_combobox.get()
-        config['Rigctld_settings']['rigctld_rig_baudrate'] = baud_combobox.get()
-        config['Rigctld_settings']['rigctld_data_bits'] = data_bits_var.get()
-        config['Rigctld_settings']['rigctld_stop_bits'] = stop_bits_var.get()
-        config['Rigctld_settings']['rigctld_serial_handshake'] = handshake_var.get()
-        config['Rigctld_settings']['rigctld_polling_rate'] = polling_combobox.get()
-        config['Rigctld_settings']['rigctld_connect_delay'] = connect_delay_combobox.get()
-        config["Rigctld_settings"]['rigctld_rts'] = str(rts_var.get())
-        config["Rigctld_settings"]['rigctld_dtr'] = str(dtr_var.get())
+        config['hamlib_settings']['hamlib_port'] = server_port_var.get()
+        config['hamlib_settings']['hamlib_ip'] = external_server_ip.get()
         config["Wsjtx_settings"]['wsjtx_port'] = str(wsjtx_port_var.get())
         
         file_path = data_directory / CONFIG_FILE
         with open(file_path, 'w') as configfile:
             config.write(configfile)        
         
-        #save_config(server_port_var, external_server_ip, use_external_server, radio_combobox, port_combobox, baud_combobox, polling_combobox, connect_delay_combobox, data_bits_var, stop_bits_var, handshake_var, rts_var, dtr_var, wsjtx_port_var)
         update_datetime()
-        disconnect_from_rigctld()
+        disconnect_from_hamlib()
         restart_listener(config)
         close_window()
 
@@ -2373,7 +2089,7 @@ def load_config():
         print("Configuration file not found. Creating a new one with default values.")
         config['Global_settings'] = {}
         config['General'] = {}
-        config['Rigctld_settings'] = {}
+        config['hamlib_settings'] = {}
         config['Wsjtx_settings'] = {}
 
     # Read the existing file or newly created sections
@@ -2394,37 +2110,14 @@ def load_config():
     if 'last_loaded_logbook' not in config['General']:
         config['General']['last_loaded_logbook'] = ''
 
-    # Rigctld_settings
-    if 'Rigctld_settings' not in config:
-        config.add_section('Rigctld_settings')
-    if 'rigctld_port' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_port'] = '4532'
-    if 'rigctld_ip' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_ip'] = '127.0.0.1'
-    if 'rigctld_ext' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_ext'] = 'False'
-    if 'rigctld_rig_model' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_rig_model'] = 'None'
-    if 'rigctld_rig_id' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_rig_id'] = '0000'
-    if 'rigctld_rig_port' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_rig_port'] = ''
-    if 'rigctld_rig_baudrate' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_rig_baudrate'] = '115200'
-    if 'rigctld_polling_rate' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_polling_rate'] = '1000'
-    if 'rigctld_connect_delay' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_connect_delay'] = '5000'
-    if 'rigctld_data_bits' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_data_bits'] = '8'
-    if 'rigctld_stop_bits' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_stop_bits'] = '1'
-    if 'rigctld_serial_handshake' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_serial_handshake'] = 'None'
-    if 'rigctld_rts' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_rts'] = 'OFF'
-    if 'rigctld_dtr' not in config['Rigctld_settings']:
-        config['Rigctld_settings']['rigctld_dtr'] = 'OFF'
+    # hamlib_settings
+    if 'hamlib_settings' not in config:
+        config.add_section('hamlib_settings')
+    if 'hamlib_port' not in config['hamlib_settings']:
+        config['hamlib_settings']['hamlib_port'] = '4532'
+    if 'hamlib_ip' not in config['hamlib_settings']:
+        config['hamlib_settings']['hamlib_ip'] = '127.0.0.1'
+
 
     # Wsjtx_settings
     if 'Wsjtx_settings' not in config:
@@ -2458,22 +2151,6 @@ def load_station_setup():
 
 
 
-  
-
-# Functie om rigs.ini in te lezen
-def load_rigs():
-    rigs = {}
-
-    file_path = RIGS_FILE
-    if os.path.exists(file_path):
-        with open(file_path, 'r') as f:
-            for line in f:
-                if line.strip():
-                    model, model_id = line.split(':')
-                    rigs[model.strip()] = int(model_id.strip())
-    return rigs
-
-
 def save_station_setup():
     # Save station_callsign and station_locator to JSON logbook
     if current_json_file:
@@ -2497,6 +2174,11 @@ def save_station_setup():
                 file.truncate()  # Ensures no leftover data in the file
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save station details to logbook: {e}")
+
+
+
+
+
 
 def load_last_logbook_on_startup():
     global current_json_file, Logbook_Window, tree
@@ -2726,7 +2408,7 @@ def load_satellite_names(filename=SAT_FILE):
 # 12 = disconnected
 # 20 = noradio
 def gui_state_control(status):
-    global radio_status_var, use_external_server, external_server_ip, server_port_var
+    global radio_status_var, external_server_ip, server_port_var
 
 
     if status == 10:
@@ -2734,14 +2416,8 @@ def gui_state_control(status):
         radio_status_label.config(fg="blue")
 
     elif status == 11:
-        radio_model = config['Rigctld_settings']['rigctld_rig_model']
-
-        if use_external_server.get():
-            radio_status_var.set(f"Connected to {external_server_ip.get()}:{server_port_var.get()}")
-            radio_status_label.config(fg="green")
-        else:
-            radio_status_var.set(f"Connected to {radio_model}")
-            radio_status_label.config(fg="green")
+        radio_status_var.set(f"Connected to {external_server_ip.get()}:{server_port_var.get()}")
+        radio_status_label.config(fg="green")
 
         freq_entry.config(fg="red", state='readonly')
         band_combobox.config(state='disabled')        
@@ -2807,7 +2483,7 @@ def show_about():
 
 # Function called beginning at start of program
 def init():
-    global use_external_server, external_server_ip, server_port_var, prefixes
+    global external_server_ip, server_port_var, prefixes
 
     # Creating & loading of config.ini
     load_config()
@@ -2818,19 +2494,9 @@ def init():
     start_listener(config)
     update_datetime()
     utc_offset_var.set(config.get('Global_settings', 'utc_offset', fallback='0'))
-    external_server_ip  = tk.StringVar(value=config.get('Rigctld_settings', 'rigctld_ip', fallback="127.0.0.1"))
-    server_port_var     = tk.StringVar(value=config.get('Rigctld_settings', 'rigctld_port', fallback=4532))
-    radio_model = config.get('Rigctld_settings', 'rigctld_rig_model', fallback="--none--")
-    use_external_server = tk.BooleanVar(value=config.getboolean('Rigctld_settings', 'rigctld_ext'))
+    external_server_ip  = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_ip', fallback="127.0.0.1"))
+    server_port_var     = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_port', fallback=4532))
     callsign_entry.focus_set() # Set focus to the callsign entry field
-
-    if radio_model == "--none--" and not use_external_server.get():
-        tracking_menu.entryconfig("Radio Frequency & Mode", state="disabled")
-        gui_state_control(20) # No radio availabe status
-    else:
-        tracking_menu.entryconfig("Radio Frequency & Mode", state="normal")
-        gui_state_control(12) # Disconnect status
-
     load_last_logbook_on_startup()
 
 
@@ -2884,17 +2550,20 @@ def load_window_position(window, name):
 
 # Exit program
 def exit_program():
-    response = messagebox.askyesno("Confirmation", "Are you sure you want to quit the program?")
+    #response = messagebox.askyesno("Confirmation", "Are you sure you want to quit the program?")
+    
+    response="yes"
+    
     if response:  # If the user clicked "Yes"
-        disconnect_from_rigctld()
-        # Terminate rigctld if it’s running
-        if rigctld_process and rigctld_process.poll() is None:
+        disconnect_from_hamlib()
+        # Terminate hamlib if it’s running
+        if hamlib_process and hamlib_process.poll() is None:
             
-            rigctld_process.terminate()  # Gracefully terminate
+            hamlib_process.terminate()  # Gracefully terminate
             try:
-                rigctld_process.wait(timeout=5)  # Wait for the process to terminate
+                hamlib_process.wait(timeout=5)  # Wait for the process to terminate
             except subprocess.TimeoutExpired:
-                rigctld_process.kill()  # Force kill if it didn’t terminate in time
+                hamlib_process.kill()  # Force kill if it didn’t terminate in time
 
         save_window_geometry(root, "MainWindow")
         if Logbook_Window is not None and Logbook_Window.winfo_exists():
@@ -3020,11 +2689,11 @@ def update_worked_before_tree(*args):
             return
 
     entered_call = callsign_var.get().strip().upper()
-    if not entered_call or len(entered_call) < 3:
+    if not entered_call or len(entered_call) < 1:
         workedb4_tree.delete(*workedb4_tree.get_children())
         return
 
-    matches = [qso for qso in qso_lines if qso.get("Callsign", "").upper() == entered_call]
+    matches = [qso for qso in qso_lines if qso.get("Callsign", "").upper().startswith(entered_call)]
 
     from datetime import datetime
     def sort_key(qso):
@@ -3052,8 +2721,8 @@ def update_worked_before_tree(*args):
             qso.get("Date", ""),
             qso.get("Time", ""),
             qso.get("Band", ""),
-            qso.get("Frequency", ""),
             qso.get("Mode", ""),
+            qso.get("Frequency", ""),
             qso.get("Country", "")
         ), tags=(tag,))
 
@@ -3118,9 +2787,8 @@ radio_status_var = tk.StringVar()
 datetime_tracking_enabled = tk.BooleanVar(value=True)  # Enabled by default
 freqmode_tracking_var = tk.BooleanVar(value=False)
 
-# Preparation of Rigctld in Threaded mode
-rig_model = load_rigs()
-rigctld_process = None
+# Preparation of hamlib in Threaded mode
+hamlib_process = None
 socket_connection = None
 
 
@@ -3148,10 +2816,10 @@ def toggle_datetime_tracking():
 # Callback voor de optie Freq/Mode in menu Tracking
 def toggle_freq_mode():
     if freqmode_tracking_var.get():
-        connect_to_rigctld_threaded()
+        connect_to_hamlib_threaded()
         toggle_freq_mode
     else:
-        disconnect_from_rigctld()
+        disconnect_from_hamlib()
 
 
 # Adding Menu to main window
@@ -3427,7 +3095,7 @@ y_padding                      = 2
 bg_color = root.cget("bg")
    
 # RADIO STATUS
-tk.Label(root, text="Radio status:", font=('Arial', 10)).grid(row=radio_status_header_row, column=radio_status_header_col, columnspan=radio_status_header_colspan, padx=5, pady=0, sticky='e')
+tk.Label(root, text="Hamlib status:", font=('Arial', 10)).grid(row=radio_status_header_row, column=radio_status_header_col, columnspan=radio_status_header_colspan, padx=5, pady=0, sticky='e')
 radio_status_label = tk.Label(root, textvariable=radio_status_var, font=('Arial', 10, 'bold'))
 radio_status_label.grid(row=radio_status_row, column=radio_status_col, columnspan=radio_status_colspan, padx=5, pady=0, sticky='w')
 
@@ -3525,7 +3193,7 @@ tk.Entry(root, textvariable=comment_var, font=('Arial', 10, 'bold')).grid(row=Co
 # SATELLITE pulldown
 tk.Label(root, text="Satellite:", font=('Arial', 10)).grid(row=Satellite_header_row, column=Satellite_header_col, columnspan=Satellite_header_colspan, padx=5, pady=y_padding, sticky='e')
 
-satellite_list = load_satellite_names()  # Load list of sattelites
+satellite_list = load_satellite_names() # Load list of sattelites
 satellite_list.insert(0, "")
 
 satellite_var = tk.StringVar()

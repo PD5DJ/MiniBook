@@ -70,8 +70,11 @@
 #                           - Fixed Date / Time entry, if incorrect format was entered logbook could not be loaded correctly anymore.
 #                           - Added Satellite Entry field, names are stored in satellites.txt and can be updated with getsatnames.py
 #                             Satellite fields are now imported from ADIF, and Exported to ADIF
+#  01-05-2025   :   1.3.1   - QRZ Lookup added, credentials entered in preference menu.
+#                           - Layout change to support QRZ Lookup, Button added for Lookup
+#                             QRZ Lookup ofcourse only works with a valid QRZ Lookup subscription
+#                             QRZ Lookup only works with internet connection.
 #**********************************************************************************************************************************
-
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -87,31 +90,29 @@ import webbrowser
 from tkcalendar import DateEntry
 import platform
 import subprocess
-import serial.tools.list_ports
 import socket
 import sys
 import threading
 import time
 import ipaddress
+import requests
+import xml.etree.ElementTree as ET
+import urllib.parse
+import math
 
 
-VERSION_NUMBER = ("v1.3.0 Hamlib Client Version")
-
-# Choose whether to use the local folder (True) or the APPDATA folder (False) for config.ini
-use_local_folder    = False
-
-if use_local_folder:
-    data_directory = Path.cwd()
-else:
-    data_directory = Path(os.getenv('APPDATA')) / "MiniBook"
-    # Ensure the directory exists
-    data_directory.mkdir(parents=True, exist_ok=True)
+VERSION_NUMBER = ("v1.3.1")
 
 # Configuration file path
+DATA_FOLDER         = Path.cwd()
 CONFIG_FILE         = "config.ini"
 DXCC_FILE           = "dxcc.json"
 SAT_FILE            = "satellites.txt"
 current_json_file   = None  # logbook file
+
+# --- QRZ Config ---
+QRZ_URL = "https://xmldata.qrz.com/xml/current/"
+QRZ_SESSION_KEY = None
 
 # Global variables
 tree                = None  # Logviewer Tree
@@ -305,7 +306,7 @@ def load_json():
                 if current_json_file:
                     # Save the last loaded file path to config
                     config.set('General', 'last_loaded_logbook', current_json_file)
-                    file_path = data_directory / CONFIG_FILE
+                    file_path = DATA_FOLDER / CONFIG_FILE
                     with open(file_path, 'w') as configfile:
                         config.write(configfile)
                 
@@ -1193,19 +1194,20 @@ def export_to_adif():
                 satellite = qso.get('Satellite', '')
 
                 # Append the formatted fields to the record
-                adif_record.append(f"<CALL:{len(callsign)}>{callsign}")
-                adif_record.append(f"<NAME:{len(name)}>{name}")
-                adif_record.append(f"<QSO_DATE:{len(date)}>{date}")
-                adif_record.append(f"<TIME_ON:{len(time)}>{time}")
-                adif_record.append(f"<MODE:{len(mode)}>{mode}")
-                adif_record.append(f"<SUBMODE:{len(mode)}>{submode}")
-                adif_record.append(f"<BAND:{len(band)}>{band}")
-                adif_record.append(f"<FREQ:{len(frequency)}>{frequency}")
-                adif_record.append(f"<RST_SENT:{len(sent)}>{sent}")
-                adif_record.append(f"<RST_RCVD:{len(received)}>{received}")
-                adif_record.append(f"<GRIDSQUARE:{len(locator)}>{locator}")
-                adif_record.append(f"<COMMENT:{len(comment)}>{comment}")
-                adif_record.append(f"<SAT_NAME:{len(satellite)}>{satellite}")
+                adif_record.append(f"<band:{len(band)}>{band}")
+                adif_record.append(f"<call:{len(callsign)}>{callsign}")
+                adif_record.append(f"<comment:{len(comment)}>{comment}")
+                adif_record.append(f"<freq:{len(frequency)}>{frequency}")
+                adif_record.append(f"<mode:{len(mode)}>{mode}")
+                adif_record.append(f"<submode:{len(mode)}>{submode}")
+                adif_record.append(f"<rst_rcvd:{len(received)}>{received}")
+                adif_record.append(f"<rst_sent:{len(sent)}>{sent}")
+                adif_record.append(f"<time_off:{len(time)}>{time}")
+                adif_record.append(f"<time_on:{len(time)}>{time}")
+                adif_record.append(f"<qso_date:{len(date)}>{date}")
+                adif_record.append(f"<gridsquare:{len(locator)}>{locator}")
+                adif_record.append(f"<sat_name:{len(satellite)}>{satellite}")
+                adif_record.append(f"<name:{len(name)}>{name}")
                 
                 # Join the ADIF record and append EOR
                 file.write(" ".join(adif_record) + " <EOR>\n")
@@ -1960,7 +1962,7 @@ def open_preferences():
     # Add horizontal line
     separator = ttk.Separator(Preference_Window, orient='horizontal').grid(row=5, column=0, columnspan=2, sticky='ew', padx=10, pady=5)
 
-    tk.Label(Preference_Window, text="Hamlib hamlib Setup", font=('Arial', 10, 'bold')).grid(row=6, column=0, columnspan="2", padx=10, pady=1)
+    tk.Label(Preference_Window, text="Hamlib Setup", font=('Arial', 10, 'bold')).grid(row=6, column=0, columnspan="2", padx=10, pady=1)
 
     # hamlib Server port
     tk.Label(Preference_Window, text="Port:").grid(row=7, column=0, padx=10, pady=1, sticky='w')
@@ -1989,6 +1991,15 @@ def open_preferences():
 
     separator = ttk.Separator(Preference_Window, orient='horizontal').grid(row=50, column=0, columnspan=2, sticky='ew', padx=10, pady=5)
 
+    tk.Label(Preference_Window, text="QRZ Lookup Credentials", font=('Arial', 10, 'bold')).grid(row=51, column=0, columnspan="2", padx=10, pady=1)    
+
+    tk.Label(Preference_Window, text="Username:").grid(row=52, column=0, sticky="e", padx=10, pady=1)
+    tk.Label(Preference_Window, text="Password:").grid(row=53, column=0, sticky="e", padx=10, pady=1)
+    qrz_username_var = tk.StringVar(value=config.get("QRZ", "username", fallback=""))
+    qrz_password_var = tk.StringVar(value=config.get("QRZ", "password", fallback=""))
+
+    tk.Entry(Preference_Window, textvariable=qrz_username_var).grid(row=52, column=1, padx=10, pady=1, sticky='w')
+    tk.Entry(Preference_Window, textvariable=qrz_password_var, show="*").grid(row=53, column=1, padx=10, pady=1, sticky='w')    
 
     # Checks if IP address is valid
     def is_valid_ip(ip):
@@ -2047,8 +2058,17 @@ def open_preferences():
         config['hamlib_settings']['hamlib_port'] = server_port_var.get()
         config['hamlib_settings']['hamlib_ip'] = external_server_ip.get()
         config["Wsjtx_settings"]['wsjtx_port'] = str(wsjtx_port_var.get())
+
+        # Save QRZ credentials in same structure
+        if 'QRZ' not in config:
+            config.add_section('QRZ')
+        if qrz_username_var.get().strip():
+            config['QRZ']['username'] = qrz_username_var.get().strip()
+        if qrz_password_var.get().strip():
+            config['QRZ']['password'] = qrz_password_var.get().strip()
+
         
-        file_path = data_directory / CONFIG_FILE
+        file_path = DATA_FOLDER / CONFIG_FILE
         with open(file_path, 'w') as configfile:
             config.write(configfile)        
         
@@ -2060,8 +2080,10 @@ def open_preferences():
     def cancel_preferences():
         close_window()
 
-    tk.Button(Preference_Window, text="Save & Exit", command=value_check, width=10, height=2).grid(row=51, column=0, columnspan=2, padx=20, pady=10, sticky="w")
-    tk.Button(Preference_Window, text="Cancel", command=cancel_preferences, width=10, height=2).grid(row=51, column=0, columnspan=2, padx=20, pady=10, sticky="e")
+    separator = ttk.Separator(Preference_Window, orient='horizontal').grid(row=60, column=0, columnspan=2, sticky='ew', padx=10, pady=5)
+    
+    tk.Button(Preference_Window, text="Save & Exit", command=value_check, width=10, height=2).grid(row=61, column=0, columnspan=2, padx=20, pady=10, sticky="w")
+    tk.Button(Preference_Window, text="Cancel", command=cancel_preferences, width=10, height=2).grid(row=61, column=0, columnspan=2, padx=20, pady=10, sticky="e")
 
     Preference_Window.protocol("WM_DELETE_WINDOW", close_window)
 
@@ -2081,7 +2103,7 @@ def load_config():
     Load parameters from config.ini and ensure every section and key is explicitly checked.
     If the configuration file does not exist, create it with default values.
     """
-    file_path = data_directory / CONFIG_FILE
+    file_path = DATA_FOLDER / CONFIG_FILE
 
     # Check if the file exists; if not, create it with default sections and keys
     if not os.path.exists(file_path):
@@ -2123,7 +2145,13 @@ def load_config():
         config.add_section('Wsjtx_settings')
     if 'wsjtx_port' not in config['Wsjtx_settings']:
         config['Wsjtx_settings']['wsjtx_port'] = '2333'
-
+        
+    if 'QRZ' not in config:
+        config.add_section('QRZ')
+    if 'username' not in config['QRZ']:
+        config['QRZ']['username'] = ''
+    if 'password' not in config['QRZ']:
+        config['QRZ']['password'] = ''        
     # Save the updated config if any changes were made
     with open(file_path, 'w') as configfile:
         config.write(configfile)
@@ -2208,6 +2236,163 @@ def load_last_logbook_on_startup():
     elif reload_last and not os.path.exists(last_logbook):
         messagebox.showwarning("File Not Found", "The last logbook file could not be found.")
 
+#########################################################################################
+#   ___  ___  ____  _    ___   ___  _  ___   _ ___ 
+#  / _ \| _ \|_  / | |  / _ \ / _ \| |/ / | | | _ \
+# | (_) |   / / /  | |_| (_) | (_) | ' <| |_| |  _/
+#  \__\_\_|_\/___| |____\___/ \___/|_|\_\\___/|_|  
+##
+#########################################################################################
+
+def locator_to_latlon(locator):
+    if len(locator) < 4:
+        raise ValueError("Locator must be at least 4 characters.")
+    locator = locator.upper()
+    lon = (ord(locator[0]) - ord('A')) * 20 - 180 + (int(locator[2]) * 2) + 1
+    lat = (ord(locator[1]) - ord('A')) * 10 - 90 + (int(locator[3]) * 1) + 0.5
+    if len(locator) >= 6:
+        lon += (ord(locator[4]) - ord('A')) * 5.0 / 60 + 2.5 / 60
+        lat += (ord(locator[5]) - ord('A')) * 2.5 / 60 + 1.25 / 60
+    return lat, lon
+
+def calculate_azimuth(lat1, lon1, lat2, lon2):
+    lat1, lon1, lat2, lon2 = map(math.radians, (lat1, lon1, lat2, lon2))
+    dlon = lon2 - lon1
+    x = math.sin(dlon) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    bearing = math.atan2(x, y)
+    return (math.degrees(bearing) + 360) % 360
+
+def get_session_key(username, password):
+    encoded_username = urllib.parse.quote(username)
+    encoded_password = urllib.parse.quote(password)
+    url = f"https://xmldata.qrz.com/xml/current/?username={encoded_username}&password={encoded_password}"
+
+    try:
+        response = requests.get(url, timeout=5)
+        print("Login XML:\n", response.text)
+    except requests.exceptions.RequestException:
+        return None, "No internet connection"
+
+    root = ET.fromstring(response.content)
+    ns = {"qrz": "http://xmldata.qrz.com"}
+
+    key = root.findtext(".//qrz:Key", namespaces=ns)
+    if not key:
+        key_element = root.find(".//{http://xmldata.qrz.com}Key")
+        if key_element is not None:
+            key = key_element.text
+
+    error = root.findtext(".//qrz:Error", namespaces=ns)
+    return key, error
+
+def query_callsign(session_key, callsign):
+    url = f"https://xmldata.qrz.com/xml/current/?s={session_key}&callsign={callsign}"
+
+    try:
+        response = requests.get(url, timeout=5)
+        print("Raw XML:\n", response.text)
+    except requests.exceptions.RequestException:
+        return {}
+
+    root = ET.fromstring(response.content)
+    ns = {"qrz": "http://xmldata.qrz.com"}
+
+    callsign_element = root.find(".//qrz:Callsign", ns)
+    if callsign_element is None:
+        print("⚠️ No Callsign element found in XML!")
+        return {}
+
+    lat = callsign_element.findtext("qrz:lat", default="", namespaces=ns)
+    lon = callsign_element.findtext("qrz:lon", default="", namespaces=ns)
+    maps_link = f"https://www.google.com/maps?q={lat},{lon}" if lat and lon else ""
+
+    data = {
+        "callsign": callsign_element.findtext("qrz:call", default="", namespaces=ns),
+        "name": f"{callsign_element.findtext('qrz:fname', default='', namespaces=ns)} {callsign_element.findtext('qrz:name', default='', namespaces=ns)}".strip(),
+        "address": callsign_element.findtext("qrz:addr1", default="", namespaces=ns),
+        "city": callsign_element.findtext("qrz:addr2", default="", namespaces=ns),
+        "province": callsign_element.findtext("qrz:state", default="", namespaces=ns),
+        "country": callsign_element.findtext("qrz:country", default="", namespaces=ns),
+        "email": callsign_element.findtext("qrz:email", default="", namespaces=ns),
+        "grid": callsign_element.findtext("qrz:grid", default="", namespaces=ns),
+        "cq_zone": callsign_element.findtext("qrz:cqzone", default="", namespaces=ns),
+        "itu_zone": callsign_element.findtext("qrz:ituzone", default="", namespaces=ns),
+        "qslmgr": callsign_element.findtext("qrz:qslmgr", default="", namespaces=ns),
+        "lat": lat,
+        "lon": lon,
+        "mapslink": maps_link,
+    }
+    return data
+
+def open_map_link(event):
+    url = result_vars["MapsLink"].get()
+    if url:
+        webbrowser.open_new_tab(url)
+
+def on_query():
+    username = config.get("QRZ", "username", fallback="").strip()
+    password = config.get("QRZ", "password", fallback="").strip()
+    callsign = callsign_var.get().strip()
+
+    if not username or not password:
+        messagebox.showerror("Missing Credentials", "QRZ username/password not found in config.ini")
+        return
+
+    if not callsign:
+        return
+
+    session_key, error = get_session_key(username, password)
+
+    if not session_key:
+        if error:
+            if "Invalid" in error or "incorrect" in error.lower() or "not authorized" in error.lower():
+                messagebox.showerror("QRZ Login Failed", "Username or password incorrect.")
+            else:
+                messagebox.showerror("Connection Error", error)
+        return
+
+    data = query_callsign(session_key, callsign)
+
+#    for key in result_vars:
+#        field_key = key.lower().replace(" ", "").replace("_", "")
+#        result_vars[key].set(data.get(field_key, ""))
+
+    locator_var.set(data.get("grid", ""))
+    name_var.set(data.get("name", ""))
+
+    try:
+        my_lat, my_lon = locator_to_latlon(my_locator_var.get())
+        target_lat, target_lon = None, None
+
+        if data.get("lat") and data.get("lon"):
+            target_lat = float(data["lat"])
+            target_lon = float(data["lon"])
+        elif data.get("grid"):
+            target_lat, target_lon = locator_to_latlon(data["grid"])
+
+        if target_lat is not None and target_lon is not None:
+            sp = round(calculate_azimuth(my_lat, my_lon, target_lat, target_lon))
+            lp = round((sp + 180) % 360)
+            heading_entry.config(state='normal')  # Temporarily make it editable
+            heading_entry.delete(0, tk.END)       # Optional: Clear old text
+            heading_entry.insert(0, f"SP: {sp}°  /  LP: {lp}°")  # Insert new text
+            heading_entry.config(state='readonly')  # Lock it again
+
+        else:
+            heading_entry.config(state='normal')
+            heading_entry.delete(0, tk.END)
+            heading_entry.config(state='readonly')
+    except Exception as e:
+        print("Azimuth calculation failed:", e)
+        heading_entry.config(state='normal')
+        heading_entry.delete(0, tk.END)
+        heading_entry.config(state='readonly')        
+
+
+
+
+
 
 
 
@@ -2238,12 +2423,15 @@ def no_file_loaded():
 # Function to restore fields after logging
 def reset_fields():
     comment_var.set("")
-    last_qso_label.config(text="") 
+    last_qso_label.config(text="")
     callsign_var.set("")
     name_var.set("")
     on_mode_change()  # 
     locator_var.set("")    
     callsign_entry.focus_set() # Set focus to the callsign entry field
+    heading_entry.config(state='normal')
+    heading_entry.delete(0, tk.END)
+    heading_entry.config(state='readonly')            
 
 
 # Function to check if Locator is valid format
@@ -2506,7 +2694,7 @@ def save_window_geometry(window, name):
     """
     if window.winfo_exists():
         config = configparser.ConfigParser()
-        file_path = data_directory / CONFIG_FILE
+        file_path = DATA_FOLDER / CONFIG_FILE
         if os.path.exists(file_path):
             config.read(file_path)
         config[name] = {"geometry": window.geometry()}
@@ -2518,7 +2706,7 @@ def load_window_geometry(window, name):
     """
     Load geometry for a specific window from the configuration file.
     """
-    file_path = data_directory / CONFIG_FILE
+    file_path = DATA_FOLDER / CONFIG_FILE
     if os.path.exists(file_path):
         config = configparser.ConfigParser()
         config.read(file_path)
@@ -2530,7 +2718,7 @@ def load_window_position(window, name):
     """
     Load the position for a specific window, keeping its size unchanged.
     """
-    file_path = data_directory / CONFIG_FILE
+    file_path = DATA_FOLDER / CONFIG_FILE
     if os.path.exists(file_path):
         config = configparser.ConfigParser()
         config.read(file_path)
@@ -2720,8 +2908,8 @@ def update_worked_before_tree(*args):
             qso.get("Date", ""),
             qso.get("Time", ""),
             qso.get("Band", ""),
-            qso.get("Frequency", ""),
             qso.get("Mode", ""),
+            qso.get("Frequency", ""),
             qso.get("Country", "")
         ), tags=(tag,))
 
@@ -2785,6 +2973,8 @@ utc_offset_var = tk.StringVar(value="0")
 radio_status_var = tk.StringVar()
 datetime_tracking_enabled = tk.BooleanVar(value=True)  # Enabled by default
 freqmode_tracking_var = tk.BooleanVar(value=False)
+qrz_username_var = tk.StringVar()
+qrz_password_var = tk.StringVar()
 
 # Preparation of hamlib in Threaded mode
 hamlib_process = None
@@ -2854,28 +3044,6 @@ help_menu.add_command(label="About", command=show_about)
 menu_bar.add_cascade(label="Help", menu=help_menu)
 root.config(menu=menu_bar)
 
-     
-
-# Function to handle backspace and other key events in the entry
-def on_focus(event):
-    event.widget.selection_clear()  # Clear any text selection
-    event.widget.icursor(tk.END)    # Move cursor to the end
-
-def on_keypress(event):
-    current_value = frequency_var.get()
-    
-    if event.keysym in ("BackSpace","Tab","Return"):
-        # Allow normal backspace behavior
-        return True
-    
-    # Only allow numbers and one decimal point
-    if event.char in "0123456789.":
-        # Allow the decimal point if there is no decimal already in the entry
-        if event.char == "." and current_value.count('.') >= 1:
-            return "break"  # Prevent the second decimal point from being inserted
-        return True
-    else:
-        return "break"  # Block other characters
 
 # Function to update frequency based on band selection
 def update_frequency_from_band(*args):
@@ -2902,6 +3070,36 @@ def update_band_from_frequency(*args):
         pass  # Ignore invalid frequency input
 
 
+# Function to handle backspace and other key events in the entry
+def on_focus(event):
+    event.widget.selection_clear()  # Clear any text selection
+    event.widget.icursor(tk.END)    # Move cursor to the end
+
+def on_keypress(event):
+    current_value = frequency_var.get()
+    
+    if event.keysym in ("BackSpace","Tab","Return"):
+        # Allow normal backspace behavior
+        return True
+    
+    # Only allow numbers and one decimal point
+    if event.char in "0123456789.":
+        # Allow the decimal point if there is no decimal already in the entry
+        if event.char == "." and current_value.count('.') >= 1:
+            return "break"  # Prevent the second decimal point from being inserted
+        return True
+    else:
+        return "break"  # Block other characters
+    
+# Entry Background color when focussed
+def set_focus_color(event):
+    #event.widget.configure(background="#e0f7ff")
+    event.widget.configure(background="#FFCCDD")
+
+def reset_focus_color(event):
+    event.widget.configure(background="white")
+
+
 
 # Set the width for columns 0 and 1
 root.grid_columnconfigure(0, weight=0, minsize=50)
@@ -2914,21 +3112,21 @@ root.grid_columnconfigure(5, weight=0, minsize=50)
 
 
 #------------- Field/Label positions Row/Column/Span --------------
-Seperator_0_row                 = 1
-Seperator_0_col                 = 0
-Seperator_0_colspan             = 7
 
-Seperator_1_row                 = 3
-Seperator_1_col                 = 0
-Seperator_1_colspan             = 7
 
-Seperator_2_row                 = 10
-Seperator_2_col                 = 0
-Seperator_2_colspan             = 7
+
+
 
 Seperator_3_row                 = 12
 Seperator_3_col                 = 0
 Seperator_3_colspan             = 7
+
+File_header_row                = 0
+File_header_col                = 0
+File_header_colspan            = 1
+File_row                       = 0
+File_col                       = 1
+File_colspan                   = 2
 
 
 radio_status_header_row        = 0
@@ -2938,12 +3136,12 @@ radio_status_row               = 0
 radio_status_col               = 4
 radio_status_colspan           = 3
 
-File_header_row                = 0
-File_header_col                = 0
-File_header_colspan            = 1
-File_row                       = 0
-File_col                       = 1
-File_colspan                   = 2
+
+Seperator_0_row                = 1
+Seperator_0_col                = 0
+Seperator_0_colspan            = 7
+
+#--------------------------------------
 
 my_callsign_header_row         = 2
 my_callsign_header_col         = 0
@@ -2966,40 +3164,33 @@ my_location_row                = 2
 my_location_col                = 5
 my_location_colspan            = 2
 
+Seperator_1_row                = 3
+Seperator_1_col                = 0
+Seperator_1_colspan            = 7
+
+#--------------------------------------
+
+
 Date_header_row                = 4
-Date_header_col                = 2
+Date_header_col                = 0
 Date_header_colspan            = 1
 Date_row                       = 4
-Date_col                       = 3
+Date_col                       = 1
 Date_colspan                   = 1
 
 Time_header_row                = 4
-Time_header_col                = 4
+Time_header_col                = 2
 Time_header_colspan            = 1
 Time_row                       = 4
-Time_col                       = 5
+Time_col                       = 3
 Time_colspan                   = 1
 
-Callsign_header_row            = 4
+Callsign_header_row            = 5
 Callsign_header_col            = 0
 Callsign_header_colspan        = 1
-Callsign_row                   = 4
+Callsign_row                   = 5
 Callsign_col                   = 1
 Callsign_colspan               = 1
-
-Name_header_row                = 5
-Name_header_col                = 0
-Name_header_colspan            = 1
-Name_row                       = 5
-Name_col                       = 1
-Name_colspan                   = 1
-
-Last_qso_header_row            = 4
-Last_qso_header_col            = 4
-Last_qso_header_colspan        = 1
-Last_qso_row                   = 14
-Last_qso_col                   = 0
-Last_qso_colspan               = 3
 
 RST_sent_header_row            = 5
 RST_sent_header_col            = 2
@@ -3009,24 +3200,31 @@ RST_sent_col                   = 3
 RST_sent_colspan               = 1
 
 RST_rcvd_header_row            = 5
-RST_rcvd_header_col            = 4
+RST_rcvd_header_col            = 3
 RST_rcvd_header_colspan        = 1
 RST_rcvd_row                   = 5
-RST_rcvd_col                   = 5
+RST_rcvd_col                   = 4
 RST_rcvd_colspan               = 1
 
+Name_header_row                = 6
+Name_header_col                = 0
+Name_header_colspan            = 1
+Name_row                       = 6
+Name_col                       = 1
+Name_colspan                   = 1
+
 Locator_header_row             = 6
-Locator_header_col             = 0
+Locator_header_col             = 2
 Locator_header_colspan         = 1
 Locator_row                    = 6
-Locator_col                    = 1
+Locator_col                    = 3
 Locator_colspan                = 1
 
-Mode_header_row                = 6
-Mode_header_col                = 2
+Mode_header_row                = 7
+Mode_header_col                = 0
 Mode_header_colspan            = 1
-Mode_row                       = 6
-Mode_col                       = 3
+Mode_row                       = 7
+Mode_col                       = 1
 Mode_colspan                   = 1
 
 Submode_header_row             = 7
@@ -3036,26 +3234,25 @@ Submode_row                    = 7
 Submode_col                    = 3
 Submode_colspan                = 1
 
-Satellite_header_row           = 8
-Satellite_header_col           = 2
-Satellite_header_colspan       = 1
-Satellite_row                  = 8
-Satellite_col                  = 3
-Satellite_colspan              = 1
-
-Band_header_row                = 7
+Band_header_row                = 8
 Band_header_col                = 0
 Band_header_colspan            = 1
-Band_row                       = 7
+Band_row                       = 8
 Band_col                       = 1
 Band_colspan                   = 1
 
 Freq_header_row                = 8
-Freq_header_col                = 0
+Freq_header_col                = 2
 Freq_header_colspan            = 1
 Freq_row                       = 8
-Freq_col                       = 1
+Freq_col                       = 3
 Freq_colspan                   = 1
+
+Heading_header_label_row       = 8
+Heading_header_label_col       = 3
+Heading_entry_row              = 8
+Heading_entry_col              = 4
+Heading_entry_colspan          = 2
 
 Comment_header_row             = 9 
 Comment_header_col             = 0
@@ -3064,15 +3261,40 @@ Comment_row                    = 9
 Comment_col                    = 1
 Comment_colspan                = 3
 
+Satellite_header_row           = 9
+Satellite_header_col           = 4
+Satellite_header_colspan       = 1
+Satellite_row                  = 9
+Satellite_col                  = 5
+Satellite_colspan              = 1
+
+Seperator_2_row                = 10
+Seperator_2_col                = 0
+Seperator_2_colspan            = 7
+
+#--------------------------------------
+
+Last_qso_header_row            = 4
+Last_qso_header_col            = 4
+Last_qso_header_colspan        = 1
+Last_qso_row                   = 14
+Last_qso_col                   = 0
+Last_qso_colspan               = 3
+
+Wipe_button_row                = 4
+Wipe_button_col                = 6
+Wipe_button_colspan            = 1
+Wipe_button_rowspan            = 2
+
+Lookup_button_row              = 6
+Lookup_button_col              = 6
+Lookup_button_colspan          = 1
+Lookup_button_rowspan          = 2
+
 Log_button_row                 = 8
 Log_button_col                 = 6
 Log_button_colspan             = 1
 Log_button_rowspan             = 2
-
-Wipe_button_row                = 6
-Wipe_button_col                = 6
-Wipe_button_colspan            = 1
-Wipe_button_rowspan            = 2
 
 DXCC_Info_row                  = 14
 DXCC_Info_col                  = 0
@@ -3122,49 +3344,60 @@ tk.Label(root, text="My Location:", font=('Arial', 10)).grid(row=my_location_hea
 my_location_label = tk.Label(root, font=('Arial', 10, 'bold'))
 my_location_label.grid(row=my_location_row, column=my_location_col, columnspan=my_location_colspan, padx=5, pady=0, sticky='w')
 
-
+# ---------------------
+separator = ttk.Separator(root, orient='horizontal')
+separator.grid(row=Seperator_1_row, column=Seperator_1_col, columnspan=Seperator_1_colspan, sticky='ew', padx=5, pady=0)
 
 # DATE
 tk.Label(root, text="QSO Date:", font=('Arial', 10)).grid(row=Date_header_row, column=Date_header_col, columnspan=Date_header_colspan, padx=5, pady=y_padding, sticky='e')
 date_entry = DateEntry(root, textvariable=date_var, date_pattern='yyyy-mm-dd', font=('Arial', 10, 'bold'))
 date_entry.grid(row=Date_row, column=Date_col, columnspan=Date_colspan, padx=5, pady=y_padding, sticky='w')
+date_entry.configure(takefocus=False)
 
 # TIME
 tk.Label(root, text="QSO Time:", font=('Arial', 10)).grid(row=Time_header_row, column=Time_header_col, columnspan=Time_header_colspan, padx=5, pady=y_padding, sticky='e')
 time_entry = tk.Entry(root, textvariable=time_var, font=('Arial', 10, 'bold'), width=10)
 time_entry.grid(row=Time_row, column=Time_col, columnspan=Time_colspan, padx=5, pady=y_padding, sticky='w')
+time_entry.configure(takefocus=False)
 
 # CALLSIGN
 tk.Label(root, text="Callsign:", font=('Arial', 10)).grid(row=Callsign_header_row, column=Callsign_header_col, columnspan=Callsign_header_colspan, padx=5, pady=y_padding, sticky='e')
 callsign_entry = tk.Entry(root, textvariable=callsign_var, font=('Arial', 10, 'bold'))
 callsign_entry.grid(row=Callsign_row, column=Callsign_col, columnspan=Callsign_colspan, padx=5, pady=y_padding, sticky='w')
+callsign_entry.bind("<FocusIn>", set_focus_color)
+callsign_entry.bind("<FocusOut>", reset_focus_color)
+
+# SENT
+tk.Label(root, text="Sent:", font=('Arial', 10)).grid(row=RST_sent_header_row, column=RST_sent_header_col, columnspan=RST_sent_header_colspan, padx=5, pady=y_padding, sticky='e')
+rst_sent_combobox = ttk.Combobox(root, textvariable=rst_sent_var, values=rst_options, font=('Arial', 10, 'bold'), width=8)
+rst_sent_combobox.grid(row=RST_sent_row, column=RST_sent_col, columnspan=RST_sent_colspan, padx=5, pady=y_padding, sticky='w')
+
+# RECEIVED
+tk.Label(root, text="Received:", font=('Arial', 10)).grid(row=RST_rcvd_header_row, column=RST_rcvd_header_col, columnspan=RST_rcvd_header_colspan,  padx=5, pady=y_padding, sticky='e')
+rst_received_combobox = ttk.Combobox(root, textvariable=rst_received_var, values=rst_options, font=('Arial', 10, 'bold'), width=8)
+rst_received_combobox.grid(row=RST_rcvd_row, column=RST_rcvd_col, columnspan=RST_rcvd_colspan, padx=5, pady=y_padding, sticky='w')
 
 # NAME
 tk.Label(root, text="Name:", font=('Arial', 10)).grid(row=Name_header_row, column=Name_header_col, columnspan=Name_header_colspan, padx=5, pady=y_padding, sticky='e')
 name_entry = tk.Entry(root, textvariable=name_var, font=('Arial', 10, 'bold'))
 name_entry.grid(row=Name_row, column=Name_col, columnspan=Name_colspan, padx=5, pady=y_padding, sticky='w')
-
-# SENT
-tk.Label(root, text="RST Sent:", font=('Arial', 10)).grid(row=RST_sent_header_row, column=RST_sent_header_col, columnspan=RST_sent_header_colspan, padx=5, pady=y_padding, sticky='e')
-rst_sent_combobox = ttk.Combobox(root, textvariable=rst_sent_var, values=rst_options, font=('Arial', 10, 'bold'), width=8)
-rst_sent_combobox.grid(row=RST_sent_row, column=RST_sent_col, columnspan=RST_sent_colspan, padx=5, pady=y_padding, sticky='w')
-
-# RECEIVED
-tk.Label(root, text="RST Received:", font=('Arial', 10)).grid(row=RST_rcvd_header_row, column=RST_rcvd_header_col, columnspan=RST_rcvd_header_colspan,  padx=5, pady=y_padding, sticky='e')
-rst_received_combobox = ttk.Combobox(root, textvariable=rst_received_var, values=rst_options, font=('Arial', 10, 'bold'), width=8)
-rst_received_combobox.grid(row=RST_rcvd_row, column=RST_rcvd_col, columnspan=RST_rcvd_colspan, padx=5, pady=y_padding, sticky='w')
+name_entry.bind("<FocusIn>", set_focus_color)
+name_entry.bind("<FocusOut>", reset_focus_color)
 
 # LOCATOR
 tk.Label(root, text="Locator:", font=('Arial', 10)).grid(row=Locator_header_row, column=Locator_header_col, columnspan=Locator_header_colspan,  padx=5, pady=y_padding, sticky='e')
-tk.Entry(root, textvariable=locator_var, font=('Arial', 10, 'bold')).grid(row=Locator_row, column=Locator_col, columnspan=Locator_colspan,  padx=5, pady=y_padding, sticky='w')
-locator_var.trace("w", lambda *args: locator_var.set(locator_var.get().upper()))
+locator_entry = tk.Entry(root, textvariable=locator_var, font=('Arial', 10, 'bold'))
+locator_entry.grid(row=Locator_row, column=Locator_col, columnspan=Locator_colspan, padx=5, pady=y_padding, sticky='w')
+locator_entry.bind("<FocusIn>", set_focus_color)
+locator_entry.bind("<FocusOut>", reset_focus_color)
+
 
 # MODE
 tk.Label(root, text="Mode:", font=('Arial', 10)).grid(row=Mode_header_row, column=Mode_header_col, columnspan=Mode_header_colspan,  padx=5, pady=y_padding, sticky='e')
 mode_combobox = ttk.Combobox(root, textvariable=mode_var, values=mode_options, font=('Arial', 10, 'bold'), width=8, state='readonly')
 mode_combobox.grid(row=Mode_row, column=Mode_col, columnspan=Mode_colspan, padx=5, pady=y_padding, sticky='w')
 mode_combobox.bind("<<ComboboxSelected>>", on_mode_change)
-
+    
 # SUBMODE
 tk.Label(root, text="Submode:", font=('Arial', 10)).grid(row=Submode_header_row, column=Submode_header_col, columnspan=Submode_header_colspan,  padx=5, pady=y_padding, sticky='e')
 submode_combobox = ttk.Combobox(root, textvariable=submode_var, values=submode_options, font=('Arial', 10, 'bold'), width=8, state='readonly')
@@ -3182,19 +3415,28 @@ tk.Label(root, text="Freq (MHz):", font=('Arial', 10)).grid(row=Freq_header_row,
 freq_entry = tk.Entry(root, textvariable=frequency_var, font=('Arial', 10, 'bold'), width=10)
 freq_entry.grid(row=Freq_row, column=Freq_col, columnspan=Freq_colspan, padx=5, pady=y_padding, sticky='w')
 freq_entry.bind("<FocusIn>", on_focus)      # Set cursor ready for direct edit by selecting all text on focus
+freq_entry.bind("<FocusIn>", set_focus_color)
+freq_entry.bind("<FocusOut>", reset_focus_color)
 freq_entry.bind("<KeyPress>", on_keypress)  # Bind keypress to allow numbers and one decimal point
 frequency_var.trace("w", update_band_from_frequency) # Bind frequency input to update the band if the frequency is outside the selected band
 
+# Heading Info
+tk.Label(root, text="Heading:", font=('Arial', 10)).grid(row=Heading_header_label_row, column=Heading_header_label_col, columnspan=1, padx=0, pady=y_padding, sticky='e')
+heading_entry = tk.Entry(root, font=('Arial', 10, 'bold'),state='readonly')
+heading_entry.grid(row=Heading_entry_row, column=Heading_entry_col, columnspan=Heading_entry_colspan, padx=5, pady=y_padding, sticky='w')
+heading_entry.configure(takefocus=False)
+
 # COMMENT
 tk.Label(root, text="Comment:", font=('Arial', 10)).grid(row=Comment_header_row, column=Comment_header_col, columnspan=Comment_header_colspan, padx=5, pady=y_padding, sticky='e')
-tk.Entry(root, textvariable=comment_var, font=('Arial', 10, 'bold')).grid(row=Comment_row, column=Comment_col, columnspan=Comment_colspan, padx=5, pady=y_padding, sticky='ew')
+comment_entry = tk.Entry(root, textvariable=comment_var, font=('Arial', 10, 'bold'))
+comment_entry.grid(row=Comment_row, column=Comment_col, columnspan=Comment_colspan, padx=5, pady=y_padding, sticky='ew')
+comment_entry.bind("<FocusIn>", set_focus_color)
+comment_entry.bind("<FocusOut>", reset_focus_color)
 
 # SATELLITE pulldown
 tk.Label(root, text="Satellite:", font=('Arial', 10)).grid(row=Satellite_header_row, column=Satellite_header_col, columnspan=Satellite_header_colspan, padx=5, pady=y_padding, sticky='e')
-
 satellite_list = load_satellite_names() # Load list of sattelites
 satellite_list.insert(0, "")
-
 satellite_var = tk.StringVar()
 satellite_dropdown = ttk.Combobox(root, textvariable=satellite_var, values=satellite_list, font=('Arial', 10, 'bold'), width=8, state="readonly")
 satellite_dropdown.grid(row=Satellite_row, column=Satellite_col, columnspan=Satellite_colspan, padx=5, pady=y_padding, sticky='ew')
@@ -3214,18 +3456,24 @@ dxcc_image_label = tk.Label(dxcc_frame, anchor='center', bg=bg_color)
 dxcc_image_label.grid(row=0, column=1, padx=5, pady=0, sticky="")
 
 # Country label (right next to image, centered via column 2)
-country_label = tk.Label(dxcc_frame, font=('Arial', 9, 'bold'), anchor='center', bg=bg_color)
+country_label = tk.Label(dxcc_frame, font=('Arial', 10, 'bold'), anchor='center', bg=bg_color)
 country_label.grid(row=0, column=2, padx=5, pady=0, sticky="")
 
 
+# --- Lookup Button ---
+lookup_button = tk.Button(root, text="Lookup\nF2", command=on_query, bd=3, relief='raised',width=10, height=2, bg='yellow', fg='black', font=('Arial', 10, 'bold'))
+lookup_button.grid(row=Lookup_button_row, column=Lookup_button_col, columnspan=Lookup_button_colspan, rowspan=Lookup_button_rowspan, padx=15, pady=10, sticky='w')
+lookup_button.configure(takefocus=False)
 
 # LOG BUTTON
 log_button = tk.Button(root, text="Log QSO\nF5", command=log_qso, bd=3, relief='raised',width=10, height=2, bg='green', fg='white', font=('Arial', 10, 'bold'))
 log_button.grid(row=Log_button_row, column=Log_button_col, columnspan=Log_button_colspan, rowspan=Log_button_rowspan, padx=15, pady=10, sticky='w')
+log_button.configure(takefocus=False)
 
 # WIPE BUTTON
 wipe_button = tk.Button(root, text="Wipe\nF1", command=reset_fields, bd=3, relief='raised',width=10, height=2, bg='grey', fg='white', font=('Arial', 10, 'bold'))
 wipe_button.grid(row=Wipe_button_row, column=Wipe_button_col, columnspan=Wipe_button_colspan, rowspan=Wipe_button_rowspan, padx=15, pady=10, sticky='w')
+wipe_button.configure(takefocus=False)
 
 # ---------------------
 separator = ttk.Separator(root, orient='horizontal')
@@ -3234,7 +3482,6 @@ separator.grid(row=Seperator_2_row, column=Seperator_2_col, columnspan=Seperator
 # LAST QSO
 last_qso_label = tk.Label(root, fg="blue", padx=5, pady=y_padding, font=('Arial', 8, 'bold'))
 last_qso_label.grid(row=Last_qso_row, column=Last_qso_col, columnspan=Last_qso_colspan,padx=5, sticky='w')
-
 
 # DXCC INFO
 dxcc_cqitu = tk.Label(root, font=('Arial', 8))
@@ -3291,6 +3538,11 @@ root.bind("<F5>", invoke_log_button)
 def invoke_reset_fields(event=None):
     reset_fields()
 root.bind("<F1>", invoke_reset_fields)
+
+# Bind F2 key to Lookup function
+def invoke_lookup_button(event=None):
+    lookup_button.invoke()
+root.bind("<F2>", invoke_lookup_button)
 
 
 # Call init function to Preset / Preload  variables / Tasks
