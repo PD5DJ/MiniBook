@@ -35,6 +35,7 @@ The MiniBook Logbook Application is a user-friendly tool designed to manage your
 - **Import / Export ADIF**: Use ADIF format for interoperability with other logging software and contest submissions.
 - **Rig CAT Support**: Supports Hamlib, allowing direct or remote connection to your radio.
 - **UDP QSO Log Support**: Receive QSO logs from other programs like WSJT-X.
+- **QRZ Lookup Support**: You can now Lookup Callsigns with a QRZ Lookup subscription
 
 ## 3. User Interface Overview
 
@@ -75,6 +76,8 @@ Click “New QSO” to open a form and enter:
 - Band / Frequency
 - Locator
 - Comment
+- Heading (Calculated heading from QRZ Lookup Grid and/or Lattitude & Longitude)
+- Satellite (Shows a list of current amateur satellites)
 
 ### QSO Edit Window
 To edit a QSO, select the entry and click “Edit”. You can change any field, including:
@@ -101,15 +104,15 @@ Set the following details to be automatically included in each QSO:
 Connect MiniBook to your radio:
 - **Port**: Default is `4532`.
 - **Use External Server**: Enter remote IP for `rigctld`.
-- **Radio Setup / Serial Setup**
-  - Choose port, baud rate, data bits, stop bits, handshake.
-  - Set RTS/DTR if needed.
-  - **Update Rate (ms)**: Polling interval.
-  - **Connect Delay (ms)**: For Bluetooth radios (e.g., 2000–10000ms).
 
 ### QSO Reception Using UDP (WSJT-X)
 Enable MiniBook to receive QSO logs:
 - **Port**: Set a port and match it in WSJT-X/JTDX.
+
+### QRZ Lookup Credentials
+Used to lookup Callsign information on QRZ Lookup, note!, you will need a QRZ subscription for this to work!
+- **Username**
+- **Password**
 
 ## 6. File Handling
 
