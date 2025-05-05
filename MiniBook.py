@@ -76,6 +76,12 @@
 #                             QRZ Lookup only works with internet connection.
 #                           - Added better Callsign filtering for QRZ lookup
 #  03-05-2025               - Now when pressing TAB in callsign entry a QRZ Lookup will be performed automaticly.
+#  05-05-2025   :   1.3.2   - Fix in ADIF export Submode.
+#                           - Export to ADIF is 3 formats, POTA, WWFF and Normal
+#                           - QSO Edit window re-arranged
+#                           - Openarator field added in My Station Setup
+#                           - POTA and WWFF entries added in logbook window
+#                           - Hamlib status and loaded logbook now moven to title bar
 #**********************************************************************************************************************************
 
 import tkinter as tk
@@ -103,7 +109,7 @@ import urllib.parse
 import math
 
 
-VERSION_NUMBER = ("v1.3.1a")
+VERSION_NUMBER = ("v1.3.2")
 
 # Configuration file path
 DATA_FOLDER         = Path.cwd()
@@ -153,17 +159,29 @@ dxcc_url            = "https://raw.githubusercontent.com/pd5dj/dxcc-json/refs/he
 #                                              
 #########################################################################################
 
+# Function to update Title
+def update_title(root, version, filename=None, status_text=None):
+    parts = [f"MiniBook {version}"]
+    if filename:
+        parts.append(os.path.basename(filename))
+    if status_text:
+        parts.append(status_text)
+    root.title(" | ".join(parts))
+
+
 # Function to reset variables and entries when logbook file failed to load.
 def no_file_loaded():
     global current_json_file
 
     current_json_file = None # Reset the current_json_file to None
-    loaded_file_label.config(text="Load or create logbook first!", fg='red')
+    update_title(root, VERSION_NUMBER, "Load or create logbook first!", radio_status_var.get())
     my_locator_var.set("")
     my_callsign_var.set("")
+    my_operator_var.set("")
     my_location_var.set("")
-    my_callsign_label.config(textvariable=my_locator_var)
-    my_locator_label.config(textvariable=my_callsign_var)
+    my_callsign_label.config(textvariable=my_callsign_var)
+    my_operator_label.config(textvariable=my_operator_var)
+    my_locator_label.config(textvariable=my_locator_var)
     my_location_label.config(textvariable=my_location_var)
     file_menu.entryconfig("Station setup", state="disabled")
 
@@ -353,28 +371,25 @@ def gui_state_control(status):
 
     if status == 10:
         radio_status_var.set("Connecting...")
-        radio_status_label.config(fg="blue")
 
     elif status == 11:
         radio_status_var.set(f"Connected to {external_server_ip.get()}:{server_port_var.get()}")
-        radio_status_label.config(fg="green")
 
         freq_entry.config(fg="red", state='readonly')
         band_combobox.config(state='disabled')        
 
     elif status == 12:
         radio_status_var.set("Disconnected")
-        radio_status_label.config(fg="red")
         freq_entry.config(fg="black", state='normal')
         band_combobox.config(state='normal')
   
     elif status == 20:
         radio_status_var.set("Not available")
-        radio_status_label.config(fg="grey")
   
     else:  # Default to idle or unknown state
         radio_status_var.set("Idle")
-        radio_status_label.config(fg="gray")
+
+    update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
 
 
 # Formats WWFF code by inserting a dash after "FF" when typed, but only once and ensures valid entry
@@ -478,6 +493,7 @@ def create_new_json():
         data = {
             "Station": {
                 "Callsign": "N0CALL",  # Add your default station callsign or leave blank
+                "Operator": "N0CALL",
                 "Locator": "AA11BB",  # Placeholder, adjust as needed
                 "Location": "",
                 "WWFF": "",
@@ -487,7 +503,7 @@ def create_new_json():
         }
         with open(current_json_file, 'w') as file:
             json.dump(data, file, indent=4)  # Save initial structure with indentation
-        loaded_file_label.config(text=os.path.basename(current_json_file), fg='blue')
+        update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
 
         load_station_setup()
         file_menu.entryconfig("Station setup", state="normal")
@@ -498,6 +514,7 @@ def convert_old_logbook(old_logbook):
     new_format = {
         "Station": {
             "Callsign": "N0CALL",
+            "Operator": "N0CALL",
             "Locator": "AA11BB",  # Placeholder, adjust as needed
             "Location": "",
             "WWFF": "",
@@ -514,6 +531,7 @@ def convert_old_logbook(old_logbook):
             "Callsign": entry.get("Callsign", ""),
             "Name": entry.get("Name", ""),
             "My_Callsign": entry.get("Station_Callsign", ""),
+            "My_Operator": "",
             "My_Locator": "",
             "My_Location": "",
             "My_WWFF": "",
@@ -576,7 +594,7 @@ def load_json():
                                 json.dump(data, new_file, indent=4)
                             messagebox.showinfo("Conversion Successful", "The logbook has been converted and saved to the new format.")
                             current_json_file = new_file_path
-                            loaded_file_label.config(text=os.path.basename(current_json_file), fg='blue')
+                            update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
                             reset_fields()  # Reset fields if needed
                             load_station_setup()
                             file_menu.entryconfig("Station setup", state="normal")
@@ -596,7 +614,7 @@ def load_json():
                         station_info = data["Station"]
                         if ("Callsign" in station_info and "Locator" in station_info):
                             # Structure is correct; proceed with loading
-                            loaded_file_label.config(text=os.path.basename(current_json_file), fg='blue')
+                            update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
                             reset_fields()  # Reset fields if needed
                             load_station_setup()
                             file_menu.entryconfig("Station setup", state="normal")
@@ -691,6 +709,7 @@ def load_json_content():
                 qso.get('WWFF', ''),
                 qso.get('POTA', ''),
                 qso.get('My Callsign', ''),
+                qso.get('My Operator', ''),
                 qso.get('My Locator', ''),
                 qso.get('My Location', ''),
                 qso.get('My WWFF', ''),
@@ -792,7 +811,7 @@ def view_logbook():
     checkbox_label.pack(side='left')
 
     # Define columns for the logbook
-    columns = ('Date', 'Time', 'Callsign', 'Name', 'Country', 'Sent', 'Received', 'Mode', 'Submode','Band', 'Frequency', 'Locator', 'Comment', 'WWFF', 'POTA', 'My Callsign', 'My Locator', 'My Location', 'My WWFF', 'My POTA')
+    columns = ('Date', 'Time', 'Callsign', 'Name', 'Country', 'Sent', 'Received', 'Mode', 'Submode','Band', 'Frequency', 'Locator', 'Comment', 'WWFF', 'POTA', 'My Callsign', 'My Operator', 'My Locator', 'My Location', 'My WWFF', 'My POTA')
 
     # Add checkboxes for each column
     column_checkboxes = {}
@@ -919,6 +938,7 @@ def view_logbook():
         'WWFF': 50,
         'POTA': 50,
         'My Callsign': 80,
+        'My Operator': 80,
         'My Locator': 70,
         'My Location': 120,
         'My WWFF': 50,
@@ -998,6 +1018,7 @@ def view_logbook():
                     qso.get('WWFF', ''),
                     qso.get('POTA', ''),
                     qso.get('My Callsign', ''),
+                    qso.get('My Operator', ''),
                     qso.get('My Locator', ''),
                     qso.get('My Location', ''),
                     qso.get('My WWFF', ''),
@@ -1089,109 +1110,106 @@ def save_to_json():
 
 
 
-# Function to edit selected QSO
 def edit_qso(event):
     global Edit_Window
 
-    # Check if the edit window is already open
     if Edit_Window is not None and Edit_Window.winfo_exists():
-        Edit_Window.lift()  # Bring the existing window to the front
+        Edit_Window.lift()
         return
 
     selected_item = tree.selection()
     if not selected_item:
-        return  # No item selected
+        return
 
-    # Get the unique identifier from the selected item
     selected_item_values = tree.item(selected_item, 'values')
-    unique_identifier = f"{selected_item_values[2]}_{selected_item_values[0]}_{selected_item_values[1]}"  # Example: Callsign_Date_Time
+    unique_identifier = f"{selected_item_values[2]}_{selected_item_values[0]}_{selected_item_values[1]}"
 
-    # Create a new window for editing
     Edit_Window = tk.Toplevel(root)
     Edit_Window.title("Edit QSO Entry")
     Edit_Window.resizable(False, False)
 
-    # Center the edit window relative to Logbook_Window
-    Logbook_Window.update_idletasks()  # Ensure dimensions are calculated
+    Logbook_Window.update_idletasks()
     logbook_x = Logbook_Window.winfo_x()
     logbook_y = Logbook_Window.winfo_y()
     logbook_width = Logbook_Window.winfo_width()
     logbook_height = Logbook_Window.winfo_height()
-    edit_width = 270  # Estimated width of Edit_Window
-    edit_height = 700  # Estimated height of Edit_Window
-
+    edit_width = 550
+    edit_height = 420
     edit_x = logbook_x + (logbook_width - edit_width) // 2
     edit_y = logbook_y + (logbook_height - edit_height) // 2
     Edit_Window.geometry(f"{edit_width}x{edit_height}+{edit_x}+{edit_y}")
-
-    # Disable interaction with Logbook_Window until Edit_Window is closed
     Edit_Window.grab_set()
 
-    # Create labels and entries for each QSO attribute
-    fields = ['Date', 'Time', 'Callsign', 'Name', 'Country', 'Sent', 'Received', 'Mode', 'Submode', 'Band', 'Frequency', 'Locator', 'Comment', 'WWFF', 'POTA', 'My Callsign', 'My Locator', 'My Location', 'My WWFF', 'My POTA', 'Satellite']
+    fields = ['Date', 'Time', 'Callsign', 'Name', 'Country', 'Sent', 'Received', 'Mode', 'Submode', 'Band', 'Frequency', 'Locator', 'Comment', 'WWFF', 'POTA', 'My Callsign', 'My Operator', 'My Locator', 'My Location', 'My WWFF', 'My POTA', 'Satellite']
     entries = {}
 
-    # Find the original QSO entry using the unique identifier
     original_qso = next((qso for qso in qso_lines if f"{qso['Callsign']}_{qso['Date']}_{qso['Time']}" == unique_identifier), None)
-
     if original_qso is None:
         print("QSO entry not found!")
         return
 
-    for i, field in enumerate(fields):
-        tk.Label(Edit_Window, text=field).grid(row=i, column=0, padx=10, pady=5)
+    form_frame = tk.Frame(Edit_Window)
+    form_frame.pack(padx=10, pady=10)
+
+    columns = 2
+    rows = (len(fields) + 1) // columns
+
+    for index, field in enumerate(fields):
+        col = index // rows
+        row = index % rows
+
+        tk.Label(form_frame, text=field).grid(row=row, column=col * 2, padx=5, pady=5, sticky='w')
 
         if field == 'Date':
-            entry = DateEntry(Edit_Window, date_pattern='yyyy-mm-dd')
-            entry.set_date(original_qso['Date'])  # Set the initial date
+            entry = DateEntry(form_frame, date_pattern='yyyy-mm-dd')
+            entry.set_date(original_qso['Date'])
 
         elif field == 'Band':
-            entry = ttk.Combobox(Edit_Window, values=list(band_to_frequency.keys()), state="readonly")
+            entry = ttk.Combobox(form_frame, values=list(band_to_frequency.keys()), state="readonly")
             entry.set(original_qso.get('Band', ''))
 
         elif field == 'Mode':
-            entry = ttk.Combobox(Edit_Window, values=mode_options, state="readonly")
+            entry = ttk.Combobox(form_frame, values=mode_options, state="readonly")
             entry.set(original_qso.get('Mode', ''))
 
         elif field == 'Submode':
-            entry = ttk.Combobox(Edit_Window, values=submode_options, state="readonly")
+            entry = ttk.Combobox(form_frame, values=submode_options, state="readonly")
             entry.set(original_qso.get('Submode', ''))
 
-        elif field == 'Sent' or field == 'Received':
-            entry = ttk.Combobox(Edit_Window, values=rst_options)
+        elif field in ['Sent', 'Received']:
+            entry = ttk.Combobox(form_frame, values=rst_options)
             entry.set(original_qso.get(field, ''))
 
         else:
             if field in ['WWFF', 'My WWFF']:
                 var = tk.StringVar()
                 var.set(original_qso.get(field, ''))
-                entry = tk.Entry(Edit_Window, textvariable=var)
+                entry = tk.Entry(form_frame, textvariable=var)
                 entry.bind("<KeyRelease>", lambda e, w=entry, v=var: format_wwff_input(e, w, v))
             elif field in ['POTA', 'My POTA']:
                 var = tk.StringVar()
                 var.set(original_qso.get(field, ''))
-                entry = tk.Entry(Edit_Window, textvariable=var)
-                entry.bind("<KeyRelease>", lambda e, w=entry, v=var: format_pota_input(e, w, v))                
+                entry = tk.Entry(form_frame, textvariable=var)
+                entry.bind("<KeyRelease>", lambda e, w=entry, v=var: format_pota_input(e, w, v))
             else:
-                entry = tk.Entry(Edit_Window)
+                entry = tk.Entry(form_frame)
                 entry.insert(0, original_qso.get(field, ''))
 
-        entry.grid(row=i, column=1, padx=10, pady=5)
-        entries[field] = entry  # Store entry reference
+        entry.grid(row=row, column=col * 2 + 1, padx=5, pady=5, sticky='w')
+        entries[field] = entry
 
-    # Function to close the edit window and reset the global variable
     def close_edit_window():
         global Edit_Window
-        Edit_Window.grab_release()  # Release the grab when closing        
+        Edit_Window.grab_release()
         Edit_Window.destroy()
         Edit_Window = None
 
-    # Function to save the edited QSO
     def save_changes():
         original_qso['Callsign'] = entries['Callsign'].get().strip().upper()
         original_qso['Locator'] = entries['Locator'].get().strip().upper()
         original_qso['My Locator'] = entries['My Locator'].get().strip().upper()
         original_qso['My Callsign'] = entries['My Callsign'].get().strip().upper()
+        original_qso['My Operator'] = entries['My Operator'].get().strip().upper()
         original_qso['Mode'] = entries['Mode'].get().strip().upper()
         original_qso['Submode'] = entries['Submode'].get().strip().upper()
         original_qso['Band'] = entries['Band'].get().strip().lower()
@@ -1199,12 +1217,10 @@ def edit_qso(event):
         locator1 = original_qso['Locator'].strip()
         locator2 = original_qso['My Locator'].strip()
 
-        # Validate locator field
         if not is_valid_locator(locator1) or not is_valid_locator(locator2):
             messagebox.showerror("Invalid Locator", "The Maidenhead locator must be at least 4 characters and valid.\nExample: FN31 or FN31TK")
             return
 
-        # Date and time format check
         date_str = entries['Date'].get().strip()
         time_str = entries['Time'].get().strip()
 
@@ -1220,46 +1236,39 @@ def edit_qso(event):
             messagebox.showerror("Invalid Time Format", "Time must be in the format: HH:MM:SS")
             return
 
-        # Update all other fields
         for field in fields:
             if field not in ['Callsign', 'Mode', 'Band', 'Submode', 'Locator', 'My Locator', 'My Callsign']:
                 original_qso[field] = entries[field].get().strip()
 
-        # Update datetime
         original_qso['DateTime'] = datetime.strptime(f"{date_str} {time_str}", '%Y-%m-%d %H:%M:%S')
 
-        # Save and reload
         save_to_json()
         load_json_content()
         close_edit_window()
 
-
-    # Function to delete the QSO
     def delete_qso():
         if messagebox.askyesno("Delete Confirmation", "Are you sure you want to delete this QSO?"):
             global qso_lines
             qso_lines = [qso for qso in qso_lines if qso != original_qso]
-
-            # Save changes to JSON and reload the Treeview
             save_to_json()
             load_json_content()
             close_edit_window()
 
+    button_frame = tk.Frame(Edit_Window)
+    button_frame.pack(pady=10)
 
-    # Save button
-    save_button = tk.Button(Edit_Window, text="Save", command=save_changes)
-    save_button.grid(row=len(fields), column=0, pady=10)
+    save_button = tk.Button(button_frame, text="Save", command=save_changes, width=10)
+    save_button.pack(side='left', padx=10)
 
-    # Close button
-    close_button = tk.Button(Edit_Window, text="Close", command=close_edit_window)
-    close_button.grid(row=len(fields), column=1, pady=10, sticky='e')
+    delete_button = tk.Button(button_frame, text="Delete", command=delete_qso, width=10)
+    delete_button.pack(side='left', padx=10)
 
-    # Delete button
-    delete_button = tk.Button(Edit_Window, text="Delete", command=delete_qso)
-    delete_button.grid(row=len(fields), column=1, pady=10, sticky='w')
+    close_button = tk.Button(button_frame, text="Close", command=close_edit_window, width=10)
+    close_button.pack(side='left', padx=10)
 
-    # Set the Edit_Window to None when it is closed
     Edit_Window.protocol("WM_DELETE_WINDOW", close_edit_window)
+
+
 
 def custom_duplicate_dialog(parent, total_count, duplicate_count, added_count):
     # Create a Toplevel window for the custom dialog
@@ -1379,8 +1388,8 @@ def import_adif():
             "Time": import_format_time(extract_field(record, "time_on")) or "",
             "Callsign": (extract_field(record, "call") or "").upper(),
             "Name": (extract_field(record, "name") or ""),
-            # Use either station_callsign or operator for "My Callsign"
-            "My Callsign": (extract_field(record, "station_callsign") or extract_field(record, "operator") or "").upper(),
+            "My Callsign": (extract_field(record, "station_callsign") or "").upper(),
+            "My Operator": (extract_field(record, "operator") or "").upper(),
             "My Locator": ("").upper(),
             "My Location": ("").upper(),
             "My WWFF": ("").upper(),
@@ -1581,7 +1590,8 @@ def export_to_adif():
             for qso in qso_lines:
                 # Prepare the ADIF record from the JSON data
                 adif_record = []
-                operator = escape_invalid_characters(qso.get('My Callsign', ''))
+                operator = escape_invalid_characters(qso.get('My Operator', ''))
+                mycallsign = escape_invalid_characters(qso.get('My Callsign', ''))
                 callsign = escape_invalid_characters(qso.get('Callsign', ''))
                 name = escape_invalid_characters(qso.get('Name', ''))
                 date = export_format_date(qso.get('Date', ''))
@@ -1606,13 +1616,14 @@ def export_to_adif():
                 adif_record.append(f"<comment:{len(comment)}>{comment}")
                 adif_record.append(f"<freq:{len(frequency)}>{frequency}")
                 adif_record.append(f"<mode:{len(mode)}>{mode}")
-                adif_record.append(f"<submode:{len(mode)}>{submode}")
+                adif_record.append(f"<submode:{len(submode)}>{submode}")
                 adif_record.append(f"<rst_rcvd:{len(received)}>{received}")
                 adif_record.append(f"<rst_sent:{len(sent)}>{sent}")
                 adif_record.append(f"<time_off:{len(time)}>{time}")
                 adif_record.append(f"<time_on:{len(time)}>{time}")
                 adif_record.append(f"<qso_date:{len(date)}>{date}")
                 adif_record.append(f"<operator:{len(operator)}>{operator}")
+                adif_record.append(f"<station_callsign:{len(mycallsign)}>{mycallsign}")
                 adif_record.append(f"<gridsquare:{len(locator)}>{locator}")
                 adif_record.append(f"<sat_name:{len(satellite)}>{satellite}")
                 adif_record.append(f"<name:{len(name)}>{name}")
@@ -1716,6 +1727,7 @@ def log_qso():
         reset_fields()
         return
     my_callsign = my_callsign_var.get().upper()
+    my_operator = my_operator_var.get().upper()
     my_locator = my_locator_var.get().upper()
     my_location = my_location_var.get()
     my_wwff = my_wwff_var.get()
@@ -1765,6 +1777,7 @@ def log_qso():
         "Callsign": callsign,
         "Name": name,
         "My Callsign": my_callsign,
+        "My Operator": my_operator,
         "My Locator": my_locator,
         "My Location": my_location,
         "My WWFF": my_wwff,
@@ -1957,6 +1970,7 @@ def process_qso(adif_record):
         "Callsign": callsign,
         "Name": name,
         "My Callsign": (extract_field(adif_record, "station_callsign") or "").upper(),
+        "My Operator": (extract_field(adif_record, "operator") or "").upper(),
         "My Locator": (extract_field(adif_record, "my_gridsquare") or "").upper(),
         "My Location": "",
         "My WWFF": "",
@@ -2028,29 +2042,39 @@ def add_qso_to_logbook(qso_entry):
     except Exception as e:
         show_auto_close_messagebox("MiniBook", f"Error!\n\nFailed to log QSO: {e}", duration=3000)
 
-
 def show_auto_close_messagebox(title, message, duration=2000):
-    """
-    Toon een aangepaste messagebox die altijd boven alle vensters verschijnt en sluit na een bepaalde tijd.
-    """
-    # Maak een nieuw Tk venster
-    temp_root = tk.Tk()
-    temp_root.title(title)
-    temp_root.geometry("300x100")  # Pas de grootte aan naar wens
-    temp_root.resizable(False, False)
+    def _show():
+        temp_root = tk.Toplevel(root)
+        temp_root.title(title)
+        temp_root.geometry("300x150")
+        temp_root.resizable(False, False)
+        temp_root.attributes("-topmost", True)
+        temp_root.overrideredirect(True)
 
-    # Zorg ervoor dat het venster altijd bovenaan blijft
-    temp_root.attributes("-topmost", True)
+        # Bereken middenpositie
+        root.update_idletasks()
+        root_x = root.winfo_rootx()
+        root_y = root.winfo_rooty()
+        root_width = root.winfo_width()
+        root_height = root.winfo_height()
+        x = root_x + (root_width - 300) // 2
+        y = root_y + (root_height - 150) // 2
+        temp_root.geometry(f"300x150+{x}+{y}")
 
-    # Label voor het bericht
-    message_label = tk.Label(temp_root, text=message, wraplength=280, justify="center")
-    message_label.pack(expand=True, pady=20)
+        # Border-frame
+        border = tk.Frame(temp_root, bg='black', bd=2)
+        border.pack(expand=True, fill='both')
 
-    # Sluit het venster na de opgegeven duur
-    temp_root.after(duration, temp_root.destroy)
+        inner = tk.Frame(border, bg='white')
+        inner.pack(expand=True, fill='both', padx=1, pady=1)
 
-    # Start de Tk eventloop
-    temp_root.mainloop()
+        label = tk.Label(inner, text=message, wraplength=280, justify="center", bg='white', font=('Arial', 10))
+        label.pack(expand=True, pady=20)
+
+        temp_root.after(duration, temp_root.destroy)
+
+    root.after(0, _show)
+
 
 
 
@@ -2327,36 +2351,45 @@ def open_station_setup():
     Station_Setup_Window.geometry(f"+{x}+{y}") 
 
     # Save original values to restore on cancel
-    original_callsign = my_callsign_var.get()
-    original_locator = my_locator_var.get()
-    original_location = my_location_var.get()
+    original_callsign   = my_callsign_var.get()
+    original_locator    = my_locator_var.get()
+    original_location   = my_location_var.get()
+    original_operator   = my_operator_var.get()
+    original_pota       = my_pota_var.get()
+    original_wwff       = my_wwff_var.get()
   
     tk.Label(Station_Setup_Window, text="Station Setup", font=('Arial', 10, 'bold')).grid(row=0, column=0, columnspan="2", padx=10, pady=1)
 
+
     my_callsign_var.trace("w", lambda *args: my_callsign_var.set(my_callsign_var.get().upper()))
     # Label & Entry for My Callsign
-    tk.Label(Station_Setup_Window, text="My Callsign:", font=('Arial', 10)).grid(row=1, column=0, padx=10, pady=1, sticky='w')
+    tk.Label(Station_Setup_Window, text="Callsign:", font=('Arial', 10)).grid(row=1, column=0, padx=10, pady=1, sticky='w')
     tk.Entry(Station_Setup_Window, textvariable=my_callsign_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=10, pady=5, sticky='w')
+
+    my_operator_var.trace("w", lambda *args: my_operator_var.set(my_operator_var.get().upper()))
+    # Label & Entry for My Operator
+    tk.Label(Station_Setup_Window, text="Operator:", font=('Arial', 10)).grid(row=2, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(Station_Setup_Window, textvariable=my_operator_var, font=('Arial', 10, 'bold')).grid(row=2, column=1, padx=10, pady=5, sticky='w')
 
     my_locator_var.trace("w", lambda *args: my_locator_var.set(my_locator_var.get().upper()))
     # Label & Entry for My Locator
-    tk.Label(Station_Setup_Window, text="My Locator:", font=('Arial', 10)).grid(row=2, column=0, padx=10, pady=1, sticky='w')
-    tk.Entry(Station_Setup_Window, textvariable=my_locator_var, font=('Arial', 10, 'bold')).grid(row=2, column=1, padx=10, pady=5, sticky='w')
+    tk.Label(Station_Setup_Window, text="Locator:", font=('Arial', 10)).grid(row=3, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(Station_Setup_Window, textvariable=my_locator_var, font=('Arial', 10, 'bold')).grid(row=3, column=1, padx=10, pady=5, sticky='w')
 
     # Label & Entry for My Location
-    tk.Label(Station_Setup_Window, text="My Location:", font=('Arial', 10)).grid(row=3, column=0, padx=10, pady=1, sticky='w')
-    tk.Entry(Station_Setup_Window, textvariable=my_location_var, font=('Arial', 10, 'bold')).grid(row=3, column=1, padx=10, pady=5, sticky='w')    
+    tk.Label(Station_Setup_Window, text="Location:", font=('Arial', 10)).grid(row=4, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(Station_Setup_Window, textvariable=my_location_var, font=('Arial', 10, 'bold')).grid(row=4, column=1, padx=10, pady=5, sticky='w')    
 
     # Label & Entry for My POTA
-    tk.Label(Station_Setup_Window, text="POTA No.:", font=('Arial', 10)).grid(row=4, column=0, padx=10, pady=1, sticky='w')
+    tk.Label(Station_Setup_Window, text="POTA No.:", font=('Arial', 10)).grid(row=5, column=0, padx=10, pady=1, sticky='w')
     my_pota_entry = tk.Entry(Station_Setup_Window, textvariable=my_pota_var, font=('Arial', 10, 'bold'))
-    my_pota_entry.grid(row=4, column=1, padx=10, pady=5, sticky='w')    
+    my_pota_entry.grid(row=5, column=1, padx=10, pady=5, sticky='w')    
     my_pota_entry.bind("<KeyRelease>", lambda event: format_pota_input(event, my_pota_entry, my_pota_var))
 
     # Label & Entry for My WWFF
-    tk.Label(Station_Setup_Window, text="Flora Fauna No.:", font=('Arial', 10)).grid(row=5, column=0, padx=10, pady=1, sticky='w')
+    tk.Label(Station_Setup_Window, text="Flora Fauna No.:", font=('Arial', 10)).grid(row=6, column=0, padx=10, pady=1, sticky='w')
     my_wwff_entry = tk.Entry(Station_Setup_Window, textvariable=my_wwff_var, font=('Arial', 10, 'bold'))
-    my_wwff_entry.grid(row=5, column=1, padx=10, pady=5, sticky='w')    
+    my_wwff_entry.grid(row=6, column=1, padx=10, pady=5, sticky='w')    
     my_wwff_entry.bind("<KeyRelease>", lambda event: format_wwff_input(event, my_wwff_entry, my_wwff_var))
 
 
@@ -2380,7 +2413,10 @@ def open_station_setup():
     def cancel_setup():
         my_callsign_var.set(original_callsign)
         my_locator_var.set(original_locator)
-        my_location_var.set(original_location)        
+        my_location_var.set(original_location)
+        my_operator_var.set(original_operator)
+        my_pota_var.set(original_pota)        
+        my_wwff_var.set(original_wwff)
         close_window()
 
     tk.Button(Station_Setup_Window, text="Save & Exit", command=save_setup, width=10, height=2).grid(row=20, column=0, columnspan=2, padx=20, pady=10, sticky="w")
@@ -2652,13 +2688,16 @@ def load_station_setup():
         try:
             with open(current_json_file, 'r', encoding='utf-8') as file:
                 logbook_data = json.load(file)
+                #Check for Valid fields in "STATION", otherwise set defaults
                 station_info = logbook_data.get("Station", {})
+                my_operator_var.set(station_info.get("Operator", "N0CALL"))
                 my_callsign_var.set(station_info.get("Callsign", "N0CALL"))
                 my_locator_var.set(station_info.get("Locator", "JO22LO"))
                 my_location_var.set(station_info.get("Location", ""))
                 my_wwff_var.set(station_info.get("WWFF", ""))
-                my_pota_var.set(station_info.get("My POTA", ""))
+                my_pota_var.set(station_info.get("POTA", ""))
 
+                my_operator_label.config(textvariable=my_operator_var)
                 my_callsign_label.config(textvariable=my_callsign_var)
                 my_locator_label.config(textvariable=my_locator_var)
                 my_location_label.config(textvariable=my_location_var)
@@ -2684,6 +2723,7 @@ def save_station_setup():
                 # Update or add the Station section
                 json_data["Station"] = {
                     "Callsign": my_callsign_var.get().upper(),
+                    "Operator": my_operator_var.get().upper(),
                     "Locator": my_locator_var.get().upper(),
                     "Location" : my_location_var.get(),
                     "WWFF": my_wwff_var.get(),
@@ -2720,7 +2760,7 @@ def load_last_logbook_on_startup():
             with open(current_json_file, 'r', encoding='utf-8') as file:
                 data = json.load(file)
                 if "Station" in data and "Logbook" in data and isinstance(data["Logbook"], list):
-                    loaded_file_label.config(text=os.path.basename(current_json_file), fg='blue')
+                    update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
                     load_json_content()  # Populate the log viewer with content
                     load_station_setup()
                     file_menu.entryconfig("Station setup", state="normal")                    
@@ -3230,7 +3270,9 @@ def update_worked_before_tree(*args):
 
 # Main window
 root = tk.Tk()
-root.title(f"MiniBook - {VERSION_NUMBER}")
+
+
+#root.title(f"MiniBook - {VERSION_NUMBER}")
 root.resizable(False, False)
 root.minsize(680, 265)
 
@@ -3259,6 +3301,7 @@ locator_var = tk.StringVar()
 my_locator_var = tk.StringVar()
 my_location_var = tk.StringVar()
 my_callsign_var = tk.StringVar()
+my_operator_var = tk.StringVar()
 my_pota_var = tk.StringVar()
 my_wwff_var = tk.StringVar()
 wwff_var = tk.StringVar()
@@ -3284,6 +3327,7 @@ qrz_password_var = tk.StringVar()
 hamlib_process = None
 socket_connection = None
 
+update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
 
 # Define the update_datetime function
 def update_datetime():
@@ -3343,6 +3387,8 @@ menu_bar.add_cascade(label="Window", menu=view_menu)
 
 # --- Reference Menu ---
 reference_menu = tk.Menu(menu_bar, tearoff=0)
+reference_menu.add_command(label="DX Summit", command=lambda: webbrowser.open("http://www.dxsummit.fi/#/"))
+reference_menu.add_separator()
 reference_menu.add_command(label="POTA Activations", command=lambda: webbrowser.open("https://pota.app/#/"))
 reference_menu.add_command(label="POTA Map", command=lambda: webbrowser.open("https://pota.app/#/map"))
 reference_menu.add_separator()
@@ -3652,31 +3698,6 @@ y_padding                      = 2
 bg_color = root.cget("bg")
 
 # MY INFO FRAME
-system_info_frame = tk.Frame(root, bg="lightgrey")
-system_info_frame.grid(row=System_info_frame_row, column=System_info_frame_col, columnspan=System_info_frame_colspan, sticky='we', padx=5, pady=2)
-  
-# LOGBOOK FILE (links)
-tk.Label(system_info_frame, text="Logbook File:", font=('Arial', 10), bg="lightgrey").grid(
-    row=0, column=0, padx=5, pady=0, sticky='e')
-loaded_file_label = tk.Label(system_info_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
-loaded_file_label.grid(row=0, column=1, padx=5, pady=0, sticky='w')
-
-# HAMLIB STATUS (rechts)
-tk.Label(system_info_frame, text="Hamlib status:", font=('Arial', 10), bg="lightgrey").grid(
-    row=0, column=2, padx=5, pady=0, sticky='e')
-radio_status_label = tk.Label(system_info_frame, textvariable=radio_status_var, font=('Arial', 10, 'bold'), bg="lightgrey")
-radio_status_label.grid(row=0, column=3, columnspan=2, padx=5, pady=0, sticky='w')
-
-# Laat de middelste kolommen uitbreiden om ruimte tussen links en rechts te creëren
-system_info_frame.grid_columnconfigure(1, weight=1)
-system_info_frame.grid_columnconfigure(2, weight=1)
-
-# ---------------------
-separator = ttk.Separator(root, orient='horizontal')
-separator.grid(row=Seperator_0_row, column=Seperator_0_col, columnspan=Seperator_0_colspan, sticky='ew', padx=5, pady=0)
-
-
-# MY INFO FRAME
 my_info_frame = tk.Frame(root, bg="lightgrey")
 my_info_frame.grid(row=My_info_frame_row, column=My_info_frame_col, columnspan=My_info_frame_colspan, sticky='we', padx=5, pady=2)
 
@@ -3685,38 +3706,45 @@ my_info_frame.columnconfigure(0, weight=1)  # left
 my_info_frame.columnconfigure(1, weight=1)  # center
 my_info_frame.columnconfigure(2, weight=1)  # right
 
-# LEFT (My Callsign)
+# (My Callsign)
 callsign_frame = tk.Frame(my_info_frame, bg="lightgrey")
 callsign_frame.grid(row=0, column=0, padx=5, sticky='w')
-tk.Label(callsign_frame, text="My Callsign:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
+tk.Label(callsign_frame, text="Callsign:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
 my_callsign_label = tk.Label(callsign_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
 my_callsign_label.pack(side='left')
 
-# CENTER (My Locator)
+# (My Operator)
+operator_frame = tk.Frame(my_info_frame, bg="lightgrey")
+operator_frame.grid(row=0, column=1, padx=5, sticky='w')
+tk.Label(operator_frame, text="Operator:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
+my_operator_label = tk.Label(operator_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
+my_operator_label.pack(side='left')
+
+# (My Locator)
 locator_frame = tk.Frame(my_info_frame, bg="lightgrey")
-locator_frame.grid(row=0, column=1, padx=5)
-tk.Label(locator_frame, text="My Locator:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
+locator_frame.grid(row=0, column=2, padx=5)
+tk.Label(locator_frame, text="Locator:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
 my_locator_label = tk.Label(locator_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
 my_locator_label.pack(side='left')
 
-# RIGHT (My Location)
+# (My Location)
 location_frame = tk.Frame(my_info_frame, bg="lightgrey")
-location_frame.grid(row=0, column=2, padx=5, sticky='e')
-tk.Label(location_frame, text="My Location:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
+location_frame.grid(row=1, column=0, padx=5, sticky='w')
+tk.Label(location_frame, text="Location:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
 my_location_label = tk.Label(location_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
 my_location_label.pack(side='left')
 
-# ROW 1 (My WWFF)
+# (My WWFF)
 my_wwff_frame = tk.Frame(my_info_frame, bg="lightgrey")
-my_wwff_frame.grid(row=1, column=0, padx=5, sticky='w')  # Positioned under My Callsign
-tk.Label(my_wwff_frame, text="My WWFF:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
+my_wwff_frame.grid(row=1, column=1, padx=5, sticky='w')  # Positioned under My Callsign
+tk.Label(my_wwff_frame, text="WWFF:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
 my_wwff_label = tk.Label(my_wwff_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
 my_wwff_label.pack(side='left')
 
-# ROW 1 (My POTA)
+# (My POTA)
 my_pota_frame = tk.Frame(my_info_frame, bg="lightgrey")
-my_pota_frame.grid(row=1, column=1, padx=5)  # Positioned under My Locator
-tk.Label(my_pota_frame, text="My POTA:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
+my_pota_frame.grid(row=1, column=2, padx=5)  # Positioned under My Locator
+tk.Label(my_pota_frame, text="POTA:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
 my_pota_label = tk.Label(my_pota_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
 my_pota_label.pack(side='left')
 # ---------------------
