@@ -1,3 +1,14 @@
+#**********************************************************************************************************************************
+# File          :   HamlibServer.py
+# Project       :   GUI for Hamlib
+# Description   :   Visual overlay for Rigctld.exe
+# Date          :   28-04-2025
+# Authors       :   Bjorn Pasteuning - PD5DJ
+# Website       :   https://wwww.pd5dj.nl
+#
+# Version history
+#   28-04-2025  :   1.0.0   - Initial basics running
+#**********************************************************************************************************************************
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import subprocess
@@ -6,12 +17,15 @@ import serial.tools.list_ports
 import os
 import configparser
 
+VERSION = "v1.0.0"
+
 SETTINGS_FILE = "settings.ini"
 
 class RigCtlGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Hamlib Server")
+        self.root.resizable(False, False)
+        self.root.title("Hamlib Server | "+ VERSION)
         self.proc = None
 
         # Detect available serial ports
@@ -37,6 +51,10 @@ class RigCtlGUI:
             self.status_var.set("Status: Starting server...")
             self.start_server()
 
+        # Ensure proper shutdown on X
+        self.root.protocol("WM_DELETE_WINDOW", self.exit_program)
+
+        
     def load_rigs(self):
         """Load rig models from rigs.ini"""
         rigs = {}

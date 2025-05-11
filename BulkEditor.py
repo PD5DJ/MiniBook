@@ -12,6 +12,8 @@
 #  27-11-2024   :   1.0.4   - Name added
 #  03-05-2025   :   1.0.5   - Satellite field added.
 #                           - Date & Time sorting fixed
+#  09-05-2025   :   1.0.6   - Dupe check added
+#                           - Search function added
 #**********************************************************************************************************************************
 
 import tkinter as tk
@@ -21,29 +23,108 @@ from datetime import datetime
 import json
 import re
 
-VERSION_NUMBER = "1.0.5"
+VERSION_NUMBER = "1.0.6"
 data = {"Station": {}, "Logbook": []}
 logbook_file_path = None
+file_name_var = None
 
 
 
+
+
+def search_treeview():
+    search_term = search_var.get().strip().lower()
+
+    # Clear all items from Treeview
+    bulk_tree.delete(*bulk_tree.get_children())
+
+    if not search_term:
+        # Geen zoekterm: toon alle QSOs
+        filtered_qsos = list(enumerate(data["Logbook"]))
+    else:
+        filtered_qsos = []
+        for idx, qso in enumerate(data["Logbook"]):
+            # Controleer of zoekterm in een van de waarden zit (geconverteerd naar string en lowercase)
+            if any(search_term in str(value).lower() for value in qso.values()):
+                filtered_qsos.append((idx, qso))
+
+    # Voeg de (gefilterde) QSOs toe
+    for new_idx, (original_idx, qso) in enumerate(filtered_qsos):
+        row_tag = "oddrow" if new_idx % 2 == 0 else "evenrow"
+        bulk_tree.insert("", "end", iid=original_idx, values=(
+            qso.get('Date', ''),
+            qso.get('Time', ''),
+            qso.get('Callsign', '').upper(),
+            qso.get('Name', ''),
+            qso.get('Mode', '').upper(),
+            qso.get('Submode', '').upper(),
+            qso.get('Band', '').lower(),
+            qso.get('Frequency', ''),
+            qso.get('Sent', ''),
+            qso.get('Received', ''),
+            qso.get('Locator', '').upper(),
+            qso.get('Comment', ''),
+            qso.get('WWFF', ''),
+            qso.get('POTA', ''),
+            qso.get('Country', ''),
+            qso.get('Continent', '').upper(),
+            qso.get('My Callsign', '').upper(),
+            qso.get('My Operator', '').upper(),
+            qso.get('My Locator', '').upper(),
+            qso.get('My Location', ''),
+            qso.get('My WWFF', ''),
+            qso.get('My POTA', ''),
+            qso.get('Satellite', '')
+        ), tags=(row_tag,))
+        
 
 def bulk_edit_window():
-    global root
+    global root, search_var, bulk_tree, file_name_var
     root = tk.Tk()
     root.title(f"MiniBook Logbook Bulk Editor - v{VERSION_NUMBER}")
 
+    # Hoofdcontainer
     frame = tk.Frame(root)
     frame.pack(fill=tk.BOTH, expand=True)
 
-    file_button = tk.Button(frame, text="Open Logbook File", command=open_logbook_file)
-    file_button.pack(side=tk.TOP, padx=10, pady=10)
+    file_name_var = tk.StringVar()
+    file_name_var.set("No file loaded")
 
-    save_button = tk.Button(frame, text="Save Logbook", command=save_logbook)
-    save_button.pack(side=tk.TOP, padx=10, pady=10)
+    file_label = tk.Label(frame, textvariable=file_name_var, font=("Arial", 12, "bold italic"))
+    file_label.pack(pady=(5, 0))
 
+
+    # Eerste rij: Open en Save (gecentreerd)
+    top_button_frame = tk.Frame(frame)
+    top_button_frame.pack(pady=(10, 0))
+
+    file_button = tk.Button(top_button_frame, text="Open Logbook File", command=open_logbook_file)
+    file_button.pack(side=tk.LEFT, padx=5)
+
+    save_button = tk.Button(top_button_frame, text="Save Logbook", command=save_logbook)
+    save_button.pack(side=tk.LEFT, padx=5)
+
+    # Tweede rij: Find Duplicates (gecentreerd)
+    find_frame = tk.Frame(frame)
+    find_frame.pack(pady=(5, 0))
+
+    find_dupes_button = tk.Button(find_frame, text="Find Duplicates", command=find_duplicates)
+    find_dupes_button.pack(padx=5)
+
+    # Derde rij: Search Entry + knop (gecentreerd)
+    search_frame = tk.Frame(frame)
+    search_frame.pack(pady=(5, 10))
+
+    search_var = tk.StringVar()
+    search_entry = ttk.Entry(search_frame, textvariable=search_var, width=40)
+    search_entry.pack(side=tk.LEFT, padx=5)
+
+    search_button = ttk.Button(search_frame, text="Search", command=search_treeview)
+    search_button.pack(side=tk.LEFT, padx=5)
+
+    # TreeView (onderaan, volledig uitgevouwen)
     tree_frame = tk.Frame(frame)
-    tree_frame.pack(fill=tk.BOTH, expand=True)
+    tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
 
     global bulk_tree, x_scroll, y_scroll
     x_scroll = tk.Scrollbar(tree_frame, orient="horizontal")
@@ -57,8 +138,8 @@ def bulk_edit_window():
     bulk_tree = ttk.Treeview(
         tree_frame,
         columns=("Date", "Time", "Callsign", "Name", "Mode", "Submode", "Band", "Frequency",
-                 "Sent", "Received", "Locator", "Comment", "Country",
-                 "Continent", "My Callsign", "My Locator", "My Location", "Satellite"),
+                 "Sent", "Received", "Locator", "Comment", "WWFF", "POTA", "Country",
+                 "Continent", "My Callsign", "My Operator", "My Locator", "My Location", "My WWFF", "My POTA", "Satellite"),
         xscrollcommand=x_scroll.set,
         yscrollcommand=y_scroll.set
     )
@@ -76,10 +157,14 @@ def bulk_edit_window():
 
     context_menu = tk.Menu(root, tearoff=0)
     context_menu.add_command(label="Bulk Edit", command=bulk_edit)
+    context_menu.add_command(label="Delete Selected QSO(s)", command=delete_selected_qsos)
     bulk_tree.bind("<Button-3>", lambda event: show_context_menu(event, context_menu))
 
     close_button = tk.Button(frame, text="Close", command=close_program)
     close_button.pack(side=tk.BOTTOM, padx=10, pady=10)
+
+
+
 
 def sort_column(tree, col, reverse):
     """Sort Treeview column on click and reapply row colors."""
@@ -102,6 +187,85 @@ def sort_column(tree, col, reverse):
     tree.heading(col, command=lambda: sort_column(tree, col, not reverse))
 
 
+def find_duplicates():
+    seen = {}
+    duplicate_index_map = {}
+
+    for idx, qso in enumerate(data["Logbook"]):
+        key = (
+            qso.get("Callsign", "").strip().upper(),
+            qso.get("Date", "").strip(),
+            qso.get("Time", "").strip()
+        )
+        if key in seen:
+            if key not in duplicate_index_map:
+                duplicate_index_map[key] = [seen[key]]
+            duplicate_index_map[key].append(idx)
+        else:
+            seen[key] = idx
+
+    all_duplicate_indices = []
+    for indices in duplicate_index_map.values():
+        all_duplicate_indices.extend(indices)
+
+    if not all_duplicate_indices:
+        messagebox.showinfo("Duplicates", "No duplicate QSOs found.")
+        return
+
+    dup_window = tk.Toplevel(root)
+    dup_window.title("Duplicate QSOs Found")
+
+    tree = ttk.Treeview(dup_window, columns=("Index", "Callsign", "Date", "Time"), show="headings", selectmode="extended")
+    tree.heading("Index", text="Index")
+    tree.heading("Callsign", text="Callsign")
+    tree.heading("Date", text="Date")
+    tree.heading("Time", text="Time")
+    tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    tree_to_log_index = {}
+    color_styles = ["lightblue", "white", "lightgreen", "lightyellow", "lightpink", "lavender", "lightgray"]
+
+    # Definieer tags met kleuren
+    for i, color in enumerate(color_styles):
+        tag_name = f"tag_{i}"
+        tree.tag_configure(tag_name, background=color)
+
+    # Voeg rijen toe met per groep een andere kleur
+    for group_index, (key, indices) in enumerate(duplicate_index_map.items()):
+        tag_name = f"tag_{group_index % len(color_styles)}"
+        for idx in indices:
+            qso = data["Logbook"][idx]
+            iid = f"dup_{idx}"
+            tree.insert(
+                "", "end", iid=iid,
+                values=(idx, qso.get("Callsign"), qso.get("Date"), qso.get("Time")),
+                tags=(tag_name,)
+            )
+            tree_to_log_index[iid] = idx
+
+    def delete_selected_duplicates():
+        selected_iids = tree.selection()
+        if not selected_iids:
+            messagebox.showwarning("No Selection", "Select records to delete.")
+            return
+        if not messagebox.askyesno("Confirm Delete", f"Delete {len(selected_iids)} selected duplicates?"):
+            return
+        indices_to_delete = sorted([tree_to_log_index[iid] for iid in selected_iids], reverse=True)
+        for i in indices_to_delete:
+            try:
+                del data["Logbook"][i]
+            except IndexError:
+                continue
+        update_treeview()
+        dup_window.destroy()
+        messagebox.showinfo("Done", f"{len(indices_to_delete)} duplicates removed.")
+
+    tk.Button(dup_window, text="Delete Selected", command=delete_selected_duplicates).pack(pady=5)
+    tk.Button(dup_window, text="Close", command=dup_window.destroy).pack(pady=5)
+
+
+
+
 def open_logbook_file():
     global logbook_file_path
     current_json_file = filedialog.askopenfilename(filetypes=[("JSON Files", "*.mbk")])
@@ -109,6 +273,12 @@ def open_logbook_file():
         logbook_file_path = current_json_file
         load_logbook_data(current_json_file)
         update_treeview()
+
+        # Update de venstertitel met bestandsnaam
+        filename_only = current_json_file.split("/")[-1]
+        root.title(f"MiniBook Logbook Bulk Editor - v{VERSION_NUMBER} - [{filename_only}]")
+        file_name_var.set(f"Loaded file: {filename_only}")
+
 
 def load_logbook_data(current_json_file):
     global data
@@ -137,11 +307,16 @@ def update_treeview():
             qso.get('Received', ''),
             qso.get('Locator', '').upper(),
             qso.get('Comment', ''),
+            qso.get('WWFF', ''),
+            qso.get('POTA', ''),
             qso.get('Country', ''),
             qso.get('Continent', '').upper(),
             qso.get('My Callsign', '').upper(),
+            qso.get('My Operator', '').upper(),
             qso.get('My Locator', '').upper(),
             qso.get('My Location', ''),
+            qso.get('My WWFF', ''),
+            qso.get('My POTA', ''),
             qso.get('Satellite', '')
         ), tags=(row_tag,))
 
@@ -155,6 +330,30 @@ def show_context_menu(event, context_menu):
         bulk_tree.selection_set(selected_items)
         context_menu.post(event.x_root, event.y_root)
 
+
+def delete_selected_qsos():
+    selected_items = bulk_tree.selection()
+    if not selected_items:
+        messagebox.showwarning("No Selection", "Please select at least one QSO to delete.")
+        return
+
+    if not messagebox.askyesno("Confirm Delete", f"Delete {len(selected_items)} selected QSO(s)? This cannot be undone."):
+        return
+
+    # Sort in reverse order to avoid index shifting issues when deleting
+    indices_to_delete = sorted([int(item) for item in selected_items], reverse=True)
+    
+    for idx in indices_to_delete:
+        try:
+            del data["Logbook"][idx]
+        except IndexError:
+            continue  # Skip invalid indexes just in case
+
+    update_treeview()
+    messagebox.showinfo("Deleted", f"{len(indices_to_delete)} QSO(s) have been deleted.")
+
+
+
 def bulk_edit():
     selected_items = bulk_tree.selection()
     if not selected_items:
@@ -163,6 +362,7 @@ def bulk_edit():
 
     bulk_edit_window = tk.Toplevel(root)
     bulk_edit_window.title("Bulk Edit")
+    bulk_edit_window.resizable(False, False)
 
     # Center the edit window relative to logbook_window
     root.update_idletasks()  # Ensure dimensions are calculated
@@ -181,7 +381,8 @@ def bulk_edit():
     bulk_edit_window.grab_set()
 
     field_options = ["Callsign", "Name", "Date", "Time", "Mode", "Submode", "Band", "Frequency", "Sent", "Received", "Locator",
-                     "Comment", "Country", "Continent", "My Callsign", "My Locator", "My Location", "Satellite"]
+                     "Comment",  "WWFF", "POTA", "Country", "Continent", "My Callsign", "My Operator", "My Locator", "My Location", "My WWFF", "My POTA", "Satellite"]
+    
     band_ranges = ["2200m", "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "11m", "10m",
                    "6m", "4m", "2m", "1.25m", "70cm", "33cm", "23cm", "13cm"]
     
@@ -266,11 +467,16 @@ def bulk_edit():
                 qso.get('Received', ''),
                 qso.get('Locator', '').upper(),
                 qso.get('Comment', ''),
+                qso.get('WWFF', ''),
+                qso.get('POTA', ''),
                 qso.get('Country', ''),
                 qso.get('Continent', '').upper(),
                 qso.get('My Callsign', '').upper(),
+                qso.get('My Operator', '').upper(),
                 qso.get('My Locator', '').upper(),
                 qso.get('My Location', ''),
+                qso.get('My WWFF', ''),
+                qso.get('My POTA', ''),
                 qso.get('Satellite', '')
             ))
 

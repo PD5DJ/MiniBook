@@ -82,41 +82,34 @@
 #                           - Openarator field added in My Station Setup
 #                           - POTA and WWFF entries added in logbook window
 #                           - Hamlib status and loaded logbook now moven to title bar
-# 09-05-2025    :   1.3.3   - QRZ API Upload added
-#                           - ADIF Import Progressbar added
-#                           - Frequency Input control added, type frequency in KHZ
-#                           - Added "Dupe check of today", callsign will show red on orange when already worked that day.
-#                           - Fix in logbook load function, Clearing old logbook upon cancelation of loading logbook
-#                   1.3.4   - Export Selected records to ADIF added in Logbook Window
 #**********************************************************************************************************************************
 
-from datetime import datetime, timedelta
-from pathlib import Path
-from PIL import Image, ImageTk
-from tkcalendar import DateEntry
+import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from datetime import datetime, timedelta
+from PIL import Image, ImageTk
 import configparser
-import ipaddress
-import json
-import math
-import logging
 import os
-import platform
+from pathlib import Path
+import requests
 import re
-import requests
-import requests
-import socket
+import json
+import webbrowser
+from tkcalendar import DateEntry
+import platform
 import subprocess
+import socket
 import sys
 import threading
 import time
-import tkinter as tk
-import urllib.parse
-import webbrowser
+import ipaddress
+import requests
 import xml.etree.ElementTree as ET
+import urllib.parse
+import math
 
 
-VERSION_NUMBER = ("v1.3.4")
+VERSION_NUMBER = ("v1.3.2")
 
 # Configuration file path
 DATA_FOLDER         = Path.cwd()
@@ -125,6 +118,9 @@ DXCC_FILE           = "dxcc.json"
 SAT_FILE            = "satellites.txt"
 current_json_file   = None  # logbook file
 
+# --- QRZ Config ---
+QRZ_URL = "https://xmldata.qrz.com/xml/current/"
+QRZ_SESSION_KEY = None
 
 # Global variables
 tree                = None  # Logviewer Tree
@@ -139,8 +135,8 @@ workedb4_tree       = None
 workedb4_frame      = None
 
 # Flag image sizing
-FLAG_IMAGE_WIDTH    = 50
-FLAG_IMAGE_HEIGHT   = 50
+FLAG_IMAGE_WIDTH    = 40
+FLAG_IMAGE_HEIGHT   = 40
 
 # -------- Operating mode options --------
 mode_options        = ["AM", "FM", "USB", "LSB", "SSB", "CW", "CW-R", "DIG", "RTTY", "MFSK", "DYNAMIC", "JT65", "JT8", "FT8", "PSK31", "PSK64", "PSK125", "QPSK31", "PKT","OLIVIA", "SSTV", "VARA","DOMINO"]
@@ -163,28 +159,14 @@ dxcc_url            = "https://raw.githubusercontent.com/pd5dj/dxcc-json/refs/he
 #                                              
 #########################################################################################
 
-# Set up QRZ upload log file
-logging.basicConfig(
-    filename='qrz_upload_log.txt',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-
-def log_upload_result(message):
-    """Append a message to the upload log file."""
-    logging.info(message)
-
-
-
-
 # Function to update Title
 def update_title(root, version, filename=None, status_text=None):
     parts = [f"MiniBook {version}"]
     if filename:
-        parts.append(f"[{os.path.basename(filename)}]")
+        parts.append(os.path.basename(filename))
     if status_text:
         parts.append(status_text)
-    root.title(" - ".join(parts))
+    root.title(" | ".join(parts))
 
 
 # Function to reset variables and entries when logbook file failed to load.
@@ -208,10 +190,6 @@ def no_file_loaded():
 def reset_fields():
     comment_var.set("")
     last_qso_label.config(text="")
-    QRZ_status_label.config(text="")
-    pota_var.set("")
-    wwff_var.set("")
-    my_wwff_label.config(text="")
     callsign_var.set("")
     name_var.set("")
     city_var.set("")
@@ -225,18 +203,6 @@ def reset_fields():
     heading_entry.config(state='normal')
     heading_entry.delete(0, tk.END)
     heading_entry.config(state='readonly')            
-
-
-# Function to clear My Station Parameters in GUI
-def clear_station_labels():
-    # Clear station info StringVars
-    my_callsign_var.set("")
-    my_operator_var.set("")
-    my_locator_var.set("")
-    my_location_var.set("")
-    my_wwff_var.set("")
-    my_pota_var.set("")
-
 
 
 # Function to check if Locator is valid format
@@ -426,6 +392,74 @@ def gui_state_control(status):
     update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
 
 
+# Formats WWFF code by inserting a dash after "FF" when typed, but only once and ensures valid entry
+def format_wwff_input(event, entry_widget, entry_var):
+    value = entry_var.get().upper()
+
+    # Insert dash after 'FF' if not already there
+    ff_index = value.find("FF")
+    if ff_index != -1:
+        dash_index = ff_index + 2
+        if len(value) > dash_index and value[dash_index] != "-":
+            value = value[:dash_index] + "-" + value[dash_index:]
+        elif len(value) == dash_index:
+            value += "-"
+
+    # Prevent recursion
+    entry_widget.unbind("<KeyRelease>")
+    entry_var.set(value)
+    entry_widget.icursor(tk.END)
+    entry_widget.bind("<KeyRelease>", lambda e: format_wwff_input(e, entry_widget, entry_var))
+
+    # Validation
+    if "-" in value:
+        prefix, suffix = value.split("-", 1)
+        if (
+            len(prefix) >= 4 and         # At least 4 characters in prefix
+            suffix.isdigit() and         # Suffix must be digits only
+            len(suffix) >= 4             # At least 4 digits
+        ):
+            entry_widget.config(bg="lightgreen")
+        else:
+            entry_widget.config(bg="#FFCCDD")
+    else:
+        entry_widget.config(bg="#FFCCDD")
+
+# Makes sure entries are uppercase
+def format_pota_input(event, entry_widget, entry_var):
+    # Force uppercase and get current value
+    raw = entry_var.get().upper()
+
+    # Regex om prefix (letters), digits, en suffix te scheiden
+    match = re.match(r'^([A-Z]+)(\d*)(.*)', raw.replace('-', '', 1))  # Remove only first dash
+    if not match:
+        entry_widget.config(bg='#FFCCDD')
+        return
+
+    prefix, digits, suffix = match.groups()
+
+    # Format output
+    formatted = prefix
+    if digits:
+        formatted += '-' + digits
+    if suffix:
+        formatted += suffix
+
+    # Update entry field
+    entry_var.set(formatted)
+    entry_widget.icursor(tk.END)
+
+    # Valid if at least 4 digits follow the dash
+    if re.fullmatch(r'^[A-Z]+-\d{4,}.*$', formatted):
+        entry_widget.config(bg='lightgreen')
+    else:
+        entry_widget.config(bg='#FFCCDD')
+
+
+
+
+
+
 #########################################################################################
 #  _    ___   ___ ___  ___   ___  _  __     _ ___  ___  _  _ 
 # | |  / _ \ / __| _ )/ _ \ / _ \| |/ /  _ | / __|/ _ \| \| |
@@ -463,9 +497,7 @@ def create_new_json():
                 "Locator": "AA11BB",  # Placeholder, adjust as needed
                 "Location": "",
                 "WWFF": "",
-                "POTA": "",
-                "QRZAPI": "",
-                "QRZUpload": ""
+                "POTA": ""
             },
             "Logbook": []
         }
@@ -486,9 +518,7 @@ def convert_old_logbook(old_logbook):
             "Locator": "AA11BB",  # Placeholder, adjust as needed
             "Location": "",
             "WWFF": "",
-            "POTA": "",
-            "QRZAPI": "",
-            "QRZUpload": ""            
+            "POTA": ""
         },
         "Logbook": []
     }
@@ -526,25 +556,15 @@ def convert_old_logbook(old_logbook):
 
 # Function to load an existing JSON file
 def load_json():
-    global current_json_file, Logbook_Window, qso_lines
+    global current_json_file, Logbook_Window
     
     # Check if a JSON file is already loaded
     if current_json_file:
         # Ask the user for confirmation
         confirm = messagebox.askyesno("Confirm", "A file is already loaded. Do you want to load a new file?")
-
         if not confirm:
-            reset_fields()
             return  # User chose not to load a new file
-
-        # Clear current file and related state
-        reset_fields()
-        clear_station_labels()
-        current_json_file = ""
-        qso_lines = []
-        workedb4_tree.delete(*workedb4_tree.get_children())
-        update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
-
+        
         # Close the logbook window if it exists
         if Logbook_Window:
             Logbook_Window.destroy()  # Close the logbook window
@@ -553,7 +573,7 @@ def load_json():
     # Proceed to load a new file
     current_json_file = filedialog.askopenfilename(filetypes=[("MiniBook files", "*.mbk")])
     if current_json_file:
-   
+
         # Load the JSON file
         try:
             with open(current_json_file, 'r', encoding='utf-8') as file:
@@ -855,147 +875,6 @@ def view_logbook():
         # Open the QSO edit window (you can call your edit QSO function here)
         edit_qso(edit_qso)  # Call the edit function with the selected QSO
 
-
-
-
-
-#   ┌─┐ ┬─┐┌─┐  ┌┐ ┬ ┬┬  ┬┌─  ┬ ┬┌─┐┬  ┌─┐┌─┐┌┬┐
-#   │─┼┐├┬┘┌─┘  ├┴┐│ ││  ├┴┐  │ │├─┘│  │ │├─┤ ││
-#   └─┘└┴└─└─┘  └─┘└─┘┴─┘┴ ┴  └─┘┴  ┴─┘└─┘┴ ┴─┴┘
-
-    def upload_qsos_to_qrz():
-        selected_items = tree.selection()
-        if not selected_items:
-            messagebox.showinfo("Info", "Select one or more QSOs to upload to QRZ.")
-            return
-
-        confirm = messagebox.askyesno("Upload to QRZ", f"Upload {len(selected_items)} selected QSO(s) to QRZ?")
-        if not confirm:
-            return
-
-        # Create a new window for the progress bar
-        progress_win = tk.Toplevel(Logbook_Window)
-        progress_win.title("Uploading to QRZ")
-
-        # Get the position and size of Logbook_Window
-        logbook_x = Logbook_Window.winfo_rootx()
-        logbook_y = Logbook_Window.winfo_rooty()
-        logbook_width = Logbook_Window.winfo_width()
-        logbook_height = Logbook_Window.winfo_height()
-
-        # Calculate the center position of Logbook_Window
-        center_x = logbook_x + logbook_width // 2
-        center_y = logbook_y + logbook_height // 2
-
-        # Set the position of progress_win relative to Logbook_Window
-        progress_win.geometry(f"+{center_x - 100}+{center_y - 50}")  # Adjust position as needed
-
-
-        progress_label = tk.Label(progress_win, text="Uploading QSOs...")
-        progress_label.pack(pady=5)
-
-        progress_bar = ttk.Progressbar(progress_win, length=250, mode='determinate', maximum=len(selected_items))
-        progress_bar.pack(pady=5)
-
-        # Counter
-        progress_counter = tk.Label(progress_win, text=f"0 / {len(selected_items)} QSOs geüpload")
-        progress_counter.pack(pady=5)
-
-        progress_win.update()
-
-        # Initialize result counts
-        result_counts = {
-            "✅ Uploaded successfully": 0,
-            "⚠️ Duplicate QSO": 0,
-            "❌ Wrong station_callsign": 0,  # <--- toegevoegd
-            "❌ Other errors": 0,
-            "🔍 Not found in memory (skipped)": 0
-        }
-
-        results = []
-
-        def upload_thread():
-            nonlocal result_counts, results
-
-            for idx, item in enumerate(selected_items, start=1):
-                values = tree.item(item)['values']
-                matched_qso = next((qso for qso in qso_lines if 
-                                    qso.get("Date") == values[0] and 
-                                    qso.get("Time") == values[1] and 
-                                    qso.get("Callsign") == values[2]), None)
-                                    
-                if matched_qso:
-                    response = upload_to_qrz(matched_qso, True)
-                    if response and hasattr(response, "text"):
-                        text = response.text.strip()
-                        if "RESULT=OK" in text:
-                            result_counts["✅ Uploaded successfully"] += 1
-                            matched_qso['status'] = "✅ Uploaded"
-                        elif "RESULT=FAIL" in text:
-                            reason = ""
-                            if "REASON=" in text:
-                                reason = text.split("REASON=")[-1].split("&")[0].strip().lower()
-
-                            if "duplicate" in reason:
-                                result_counts["⚠️ Duplicate QSO"] += 1
-                                matched_qso['status'] = "⚠️ Duplicate"
-                            elif "wrong station_callsign" in reason:
-                                result_counts["❌ Wrong station_callsign"] += 1
-                                matched_qso['status'] = "❌ Wrong station_callsign"
-                            else:
-                                result_counts["❌ Other errors"] += 1
-                                matched_qso['status'] = f"❌ Other error: {reason}"
-                        elif "RESULT=AUTH" in text:
-                            result_counts["❌ Other errors"] += 1
-                            matched_qso['status'] = "❌ Invalid API key"
-                        else:
-                            result_counts["❌ Other errors"] += 1
-                            matched_qso['status'] = "❌ Unknown response"
-                    else:
-                        result_counts["❌ Other errors"] += 1
-                        matched_qso['status'] = "❌ Invalid response"
-
-                    results.append(matched_qso)
-                else:
-                    result_counts["🔍 Not found in memory (skipped)"] += 1
-
-
-
-
-                # Update progress bar
-                progress_bar['value'] = idx
-                progress_counter.config(text=f"{idx} / {len(selected_items)} QSOs uploaded")
-                progress_win.update()
-
-            # After upload process is done, close the progress window and show the summary
-            progress_win.destroy()
-
-            # Show the summary message
-            summary_lines = [f"{k}: {v}" for k, v in result_counts.items() if v > 0]
-            summary = "\n".join(summary_lines)
-            messagebox.showinfo("QRZ Upload Result", summary)
-
-            # Log the result with timestamp
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            log_upload_result(f"=== QRZ Upload at {timestamp} ===\n" + summary)
-            for q in results:
-                call = q.get('Callsign', 'Unknown')
-                date = q.get('Date', 'Unknown')
-                time = q.get('Time', 'Unknown')
-                status = q.get('status', 'Unknown')
-                log_upload_result(f"Callsign {call} @ {date} {time}: {status}")
-
-        # Start the upload process in a separate thread
-        upload_thread_instance = threading.Thread(target=upload_thread)
-        upload_thread_instance.start()
-
-
-
-
-#   ┌┬┐┌─┐┬  ┌─┐┌┬┐┌─┐  ┌─┐ ┌─┐┌─┐┌─┐
-#    ││├┤ │  ├┤  │ ├┤   │─┼┐└─┐│ │└─┐
-#   ─┴┘└─┘┴─┘└─┘ ┴ └─┘  └─┘└└─┘└─┘└─┘
-
     # Function to delete QSO from the menu
     def delete_qso_from_menu():
         global qso_lines
@@ -1004,49 +883,30 @@ def view_logbook():
         if selected_items:
             confirm = messagebox.askyesno("Delete QSO(s)", f"Are you sure you want to delete {len(selected_items)} selected QSO(s)?")
             if confirm:
-                # Verzamel identifiers van te verwijderen QSOs
+                # Verwijder uit qso_lines op basis van Date, Time en Callsign
                 identifiers_to_delete = []
                 for item in selected_items:
                     values = tree.item(item)['values']
-                    identifiers_to_delete.append((
-                        str(values[0]).strip(),
-                        str(values[1]).strip(),
-                        str(values[2]).strip().upper()
-                    ))
+                    identifiers_to_delete.append((values[0], values[1], values[2]))  # Date, Time, Callsign
 
-                # Filter qso_lines in één keer
                 qso_lines = [
                     qso for qso in qso_lines
-                    if (
-                        str(qso.get("Date", "")).strip(),
-                        str(qso.get("Time", "")).strip(),
-                        str(qso.get("Callsign", "")).strip().upper()
-                    ) not in identifiers_to_delete
+                    if (qso.get("Date"), qso.get("Time"), qso.get("Callsign")) not in identifiers_to_delete
                 ]
 
-                # Verwijder de geselecteerde items pas ná verwerking van qso_lines
-                tree.detach(*selected_items)  # voorkom visuele updates tijdens delete
+                # Verwijder uit TreeView
                 for item in selected_items:
                     tree.delete(item)
 
                 save_to_json()
-                load_json_content()  # Laad alles opnieuw (en update GUI in één keer)
+                load_json_content()  # Refresh the tree
                 update_worked_before_tree()
-
-                # Toon eenvoudige melding dat verwijderen voltooid is
-                messagebox.showinfo(
-                    "Delete Complete",
-                    f"{len(identifiers_to_delete)} QSO(s) deleted successfully."
-                )                
 
 
     # Create a context menu
     context_menu = tk.Menu(Logbook_Window, tearoff=0)
     context_menu.add_command(label="Edit QSO", command=edit_qso_from_menu)
     context_menu.add_command(label="Delete QSO('s)", command=delete_qso_from_menu)
-    context_menu.add_command(label="Upload to QRZ", command=upload_qsos_to_qrz)
-    context_menu.add_command(label="Export to ADIF (selected)", command=export_selected_to_adif)
-
 
     # Bind the right-click event to show the context menu
     tree.bind("<Button-3>", show_context_menu)
@@ -1116,12 +976,6 @@ def view_logbook():
 
     # Initial load of the JSON content
     load_json_content()  
-
-
-
-#   ┬  ┌─┐┌─┐  ┌─┐┌─┐┌─┐┬─┐┌─┐┬ ┬
-#   │  │ ││ ┬  └─┐├┤ ├─┤├┬┘│  ├─┤
-#   ┴─┘└─┘└─┘  └─┘└─┘┴ ┴┴└─└─┘┴ ┴
 
     # Function to search the log
     def search_log():
@@ -1215,73 +1069,6 @@ def view_logbook():
 
 
 
-def export_selected_to_adif():
-    if not tree:
-        messagebox.showerror("Error", "Treeview not available.")
-        return
-
-    selected_items = tree.selection()
-    if not selected_items:
-        messagebox.showinfo("Export to ADIF", "No QSOs selected.")
-        return
-
-    adif_lines = []
-    for item in selected_items:
-        values = tree.item(item)['values']
-        qso = next((q for q in qso_lines if 
-                    q.get("Date") == values[0] and 
-                    q.get("Time") == values[1] and 
-                    q.get("Callsign") == values[2]), None)
-        if not qso:
-            continue
-
-        adif_line_list = []
-        def add_field(tag, value):
-            if value:
-                val = str(value).strip()
-                adif_line_list.append(f"<{tag}:{len(val)}>{val}")
-
-        add_field("qso_date", qso.get("Date", "").replace("-", ""))
-        add_field("time_on", qso.get("Time", "").replace(":", ""))
-        add_field("call", qso.get("Callsign", ""))
-        add_field("name", qso.get("Name", ""))
-        add_field("rst_sent", qso.get("Sent", ""))
-        add_field("rst_rcvd", qso.get("Received", ""))
-        add_field("mode", qso.get("Mode", ""))
-        add_field("submode", qso.get("Submode", ""))
-        add_field("band", qso.get("Band", ""))
-        add_field("freq", qso.get("Frequency", ""))
-        add_field("gridsquare", qso.get("Locator", ""))
-        add_field("comment", qso.get("Comment", ""))
-        add_field("station_callsign", qso.get("My Callsign", ""))
-        add_field("operator", qso.get("My Operator", ""))
-        add_field("country", qso.get("Country", ""))
-        add_field("cont", qso.get("Continent", ""))
-        add_field("sat_name", qso.get("Satellite", ""))
-
-        if qso.get("WWFF"):
-            add_field("sig", "WWFF")
-            add_field("sig_info", qso.get("WWFF", ""))
-        if qso.get("POTA"):
-            add_field("sig", "POTA")
-            add_field("sig_info", qso.get("POTA", ""))
-
-        adif_lines.append(" ".join(adif_line_list) + " <EOR>\n")
-
-    if not adif_lines:
-        messagebox.showinfo("Export to ADIF", "No valid QSOs found for export.")
-        return
-
-    export_file = filedialog.asksaveasfilename(defaultextension=".adi", filetypes=[("ADIF files", "*.adi")])
-    if export_file:
-        try:
-            with open(export_file, "w", encoding="utf-8") as f:
-                f.write("Generated by MiniBook\n")
-                f.write("<ADIF_VER:5>3.1.0 <PROGRAMID:8>MiniBook <EOH>\n")
-                f.writelines(adif_lines)
-            messagebox.showinfo("Export to ADIF", f"{len(adif_lines)} QSOs exported successfully.")
-        except Exception as e:
-            messagebox.showerror("Export Error", f"Failed to save ADIF file:\n{e}")
 
 
 
@@ -1320,13 +1107,8 @@ def save_to_json():
 
 
 
-#########################################################################################
-#  ___ ___ ___ _____    ___  ___  ___  
-# | __|   \_ _|_   _|  / _ \/ __|/ _ \ 
-# | _|| |) | |  | |   | (_) \__ \ (_) |
-# |___|___/___| |_|    \__\_\___/\___/ 
-#
-#########################################################################################
+
+
 
 def edit_qso(event):
     global Edit_Window
@@ -1402,13 +1184,13 @@ def edit_qso(event):
             if field in ['WWFF', 'My WWFF']:
                 var = tk.StringVar()
                 var.set(original_qso.get(field, ''))
-                var.trace_add("write", lambda *args, v=var: v.set(v.get().upper()))
                 entry = tk.Entry(form_frame, textvariable=var)
+                entry.bind("<KeyRelease>", lambda e, w=entry, v=var: format_wwff_input(e, w, v))
             elif field in ['POTA', 'My POTA']:
                 var = tk.StringVar()
                 var.set(original_qso.get(field, ''))
-                var.trace_add("write", lambda *args, v=var: v.set(v.get().upper()))
                 entry = tk.Entry(form_frame, textvariable=var)
+                entry.bind("<KeyRelease>", lambda e, w=entry, v=var: format_pota_input(e, w, v))
             else:
                 entry = tk.Entry(form_frame)
                 entry.insert(0, original_qso.get(field, ''))
@@ -1555,9 +1337,9 @@ def import_adif():
     # Select ADIF file
     adif_file = filedialog.askopenfilename(title="Select ADIF File", filetypes=[("ADIF files", "*.adi"), ("All files", "*.*")])
     if not adif_file:
-        return
+        return  # Exit if no file is selected
 
-    # Load JSON logbook data
+    # Load the currently loaded JSON logbook data
     try:
         with open(current_json_file, "r", encoding="utf-8") as json_file:
             logbook_data = json.load(json_file)
@@ -1568,11 +1350,12 @@ def import_adif():
         messagebox.showerror("Error", "Logbook file is not valid JSON.")
         return
 
-    # Load ADIF content
+    # Attempt to read ADIF file with UTF-8 encoding
     try:
         with open(adif_file, "r", encoding="utf-8") as f:
             content = f.read()
     except UnicodeDecodeError:
+        # Fallback to Latin-1 encoding if UTF-8 fails
         try:
             with open(adif_file, "r", encoding="latin-1") as f:
                 content = f.read()
@@ -1580,33 +1363,26 @@ def import_adif():
             messagebox.showerror("Error", f"Failed to load ADIF file: {e}")
             return
 
+    # Split the content by "<EOR>" to separate each QSO record
     qso_records = content.split("<EOR>")
 
-    # Setup progress window
-    progress_window = tk.Toplevel(root)
-    progress_window.title("Importing ADIF")
-    progress_window.geometry("400x100")
-    progress_label = tk.Label(progress_window, text="Importing QSOs...")
-    progress_label.pack(pady=5)
-    progress_counter = tk.Label(progress_window, text="")
-    progress_counter.pack()
-    progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
-    progress.pack(pady=5)
-    total_qso_count = len(qso_records)
-    progress["maximum"] = total_qso_count
-
+    # Gather all new entries and duplicates
     new_entries = []
     duplicates = []
-
-    for i, record in enumerate(qso_records, 1):
+    total_qso_count = len(qso_records)
+    for record in qso_records:
+        # Skip empty records
         if not record.strip():
             continue
 
         sig = extract_field(record, "sig").upper()
         sig_info = extract_field(record, "sig_info")
+
+        # Determine if this is WWFF or POTA
         wwff = sig_info if sig == "WWFF" else ""
         pota = sig_info if sig == "POTA" else ""
 
+        # Extract QSO fields
         entry = {
             "Date": import_format_date(extract_field(record, "qso_date")) or "",
             "Time": import_format_time(extract_field(record, "time_on")) or "",
@@ -1633,9 +1409,11 @@ def import_adif():
             "Satellite": extract_field(record, "sat_name") or ""
         }
 
+        # Check if "my_sig" field exists and contains "POTA"
         if extract_field(record, "my_sig") == "POTA":
             entry["My POTA"] = extract_field(record, "my_sig_info") or ""
 
+        # Check and update country and continent based on callsign
         callsign = entry["Callsign"]
         check_callsign_prefix(callsign, False)
         if country_var:
@@ -1643,7 +1421,9 @@ def import_adif():
         if continent_var:
             entry["Continent"] = continent_var
 
+        # Only add entry if the callsign is present
         if entry["Callsign"]:
+            # Check for duplicates in logbook, ensuring uppercase comparison
             is_duplicate = any(
                 existing_entry["Callsign"] == entry["Callsign"] and
                 existing_entry["Date"] == entry["Date"] and
@@ -1655,20 +1435,14 @@ def import_adif():
             else:
                 new_entries.append(entry)
 
-        # Update progress UI
-        progress["value"] = i
-        progress_counter.config(text=f"{total_qso_count - i} QSO(s) remaining...")
-        progress_window.update_idletasks()
-
-    progress_window.destroy()
-
+    # Ask user action for duplicates if any are found
     added_count = len(new_entries)
     if duplicates:
         duplicate_count = len(duplicates)
         action = custom_duplicate_dialog(parent=root, total_count=total_qso_count, duplicate_count=duplicate_count, added_count=added_count)
-
+        
         if action is None:
-            return
+            return  # Cancel import if dialog is closed without action
         elif action == "Overwrite":
             for duplicate_entry in duplicates:
                 for idx, existing_entry in enumerate(logbook_data["Logbook"]):
@@ -1678,26 +1452,30 @@ def import_adif():
                         logbook_data["Logbook"][idx] = duplicate_entry
                         break
         elif action == "Ignore":
-            new_entries = []
+            # Count how many were ignored
+            ignored_count = len(new_entries)
+            new_entries = []  # Clear the new entries, as we ignore duplicates
         elif action == "Add":
             new_entries.extend(duplicates)
-            added_count = len(new_entries)
+            added_count = duplicate_count
 
+    # Add all new (non-duplicate) entries
     logbook_data["Logbook"].extend(new_entries)
 
+    # Save the updated JSON logbook
     with open(current_json_file, "w", encoding="utf-8") as json_file:
         json.dump(logbook_data, json_file, indent=4)
 
+    # Update the logbook window if it is open
     for window in root.winfo_children():
         if isinstance(window, tk.Toplevel) and hasattr(window, 'update_logbook'):
             window.update_logbook()
 
-    message = f"{added_count} new QSO(s) added to the logbook."
-    if duplicates and action:
-        message = f"{len(duplicates)} duplicate QSO(s) processed. {added_count} new QSO(s) added to the logbook."
-    messagebox.showinfo("Import ADIF", message)
-
-
+    # After importing ADIF and processing QSOs
+    if duplicates:        
+        if action:
+            messagebox.showinfo("Import ADIF", f"{duplicate_count} duplicate QSO(s) processed. "
+                                              f"{added_count} new QSO(s) added to the logbook.")
 def extract_field(record, field_name):
     """
     Extract a field's value from the ADIF record in the format <FIELD_NAME:length>value.
@@ -1938,18 +1716,16 @@ def log_qso():
         messagebox.showerror("Invalid Time", "Time is not valid (e.g., 25:00:00 is not a real time).")
         return
 
+
     # Get the values from the input fields and combo boxes
     date = date_var.get()
     time = time_var.get()
     callsign = callsign_var.get().strip()
     name = name_var.get().strip()
-    
-    # Check if callsign is provided
     if not callsign:
         messagebox.showwarning("Warning", "Log may not be empty!")
         reset_fields()
         return
-    
     my_callsign = my_callsign_var.get().upper()
     my_operator = my_operator_var.get().upper()
     my_locator = my_locator_var.get().upper()
@@ -1976,6 +1752,7 @@ def log_qso():
     else:
         wwff_pota = ""
 
+    
     # Frequency input validation
     if not frequency_var.get():
         frequency = ""
@@ -1985,7 +1762,7 @@ def log_qso():
         except ValueError:
             messagebox.showerror("Invalid input", "Enter a valid decimal number for the frequency.")
             return
-
+    
     locator = locator_var.get().strip()
 
     # Validate locator field
@@ -2040,119 +1817,19 @@ def log_qso():
             file.seek(0)
             json.dump(json_data, file, ensure_ascii=False, indent=4)
             file.truncate()  # Ensure no old data remains in the file
-
+            
             # Reset input fields and update last QSO label
             reset_fields()
-            last_qso_label.config(text=f"Last QSO with {callsign} at {time} on {float(frequency):.3f}MHz in {mode}")
-
+            last_qso_label.config(text=f"Last QSO: {callsign} at {time_var.get()}")    
 
             # Update the logbook window if it is open
             for window in root.winfo_children():
                 if isinstance(window, tk.Toplevel) and hasattr(window, 'update_logbook'):
-                    window.update_logbook()
-
-            # Upload to QRZ after logging the QSO
-            if upload_qrz_var.get():
-                upload_to_qrz(qso_entry,False)
+                    window.update_logbook()  
 
     except Exception as e:
         messagebox.showerror("Error", f"Failed to log QSO entry: {e}")
 
-
-
-
-#########################################################################################
-#   ___  ___  ____  _   _ ___ _    ___   _   ___  
-#  / _ \| _ \|_  / | | | | _ \ |  / _ \ /_\ |   \ 
-# | (_) |   / / /  | |_| |  _/ |_| (_) / _ \| |) |
-#  \__\_\_|_\/___|  \___/|_| |____\___/_/ \_\___/ 
-#
-#########################################################################################
-
-# Function to build QRZ ADIF Compatible string
-def build_adif(qso):
-    # Use .get() for every key to avoid KeyError and provide default values if any are missing
-    callsign = qso.get('Callsign', '')
-    date = qso.get('Date', '')
-    time = qso.get('Time', '')
-    band = qso.get('Band', '')
-    mode = qso.get('Mode', '')
-    sent = qso.get('Sent', '')
-    received = qso.get('Received', '')
-    my_callsign = qso.get('My Callsign', '')
-    locator = qso.get('Locator', '')
-    name = qso.get('Name', '')
-    comment = qso.get('Comment', '')
-    frequency = qso.get('Frequency', '')
-
-    # Construct the ADIF formatted QSO entry string with required fields
-    adif = (
-        f"<CALL:{len(callsign)}>{callsign}"
-        f"<QSO_DATE:8>{date.replace('-', '')}"  # Date formatted as YYYYMMDD
-        f"<TIME_ON:6>{time.replace(':', '')}"  # Time formatted as HHMMSS
-        f"<BAND:{len(band)}>{band}"
-        f"<MODE:{len(mode)}>{mode}"
-        f"<RST_SENT:{len(sent)}>{sent}"
-        f"<RST_RCVD:{len(received)}>{received}"
-        f"<STATION_CALLSIGN:{len(my_callsign)}>{my_callsign}"
-        f"<GRIDSQUARE:{len(locator)}>{locator}"
-        f"<NAME:{len(name)}>{name}"
-        f"<COMMENT:{len(comment)}>{comment}"
-        f"<FREQ:{len(frequency)}>{frequency}"
-    )
-
-    # Append the <EOR> tag at the end of the ADIF string to indicate the end of the QSO record
-    adif += "<EOR>"
-
-    return adif
-
-## Function to upload QSO to QRZ
-def upload_to_qrz(qso, showstatus):
-    global QRZ_status_label
-    # Prepare POST data
-    post_data = {
-        "KEY": my_qrzapi_var.get(),
-        "ACTION": "INSERT",
-        "ADIF": build_adif(qso),
-    }
-
-    try:
-        response = requests.post("https://logbook.qrz.com/api", data=post_data)
-        if response.status_code == 200:
-            if "RESULT=OK" in response.text:
-                msg = "✅ QSO successfully uploaded to QRZ."
-                color = "green"
-            elif "RESULT=FAIL" in response.text:
-                reason = response.text.split("REASON=")[-1].split("&")[0]
-                if "duplicate" in reason.lower():
-                    msg = f"⚠️ {reason}"
-                    color = "orange"
-                elif "wrong station_callsign" in reason.lower():
-                    msg = f"❌ Wrong station_callsign!"#: {reason}"
-                    color = "red"
-                else:
-                    msg = f"❌ QRZ upload failed"#: {reason}"
-                    color = "red"
-            elif "RESULT=AUTH" in response.text:
-                msg = "❌ Invalid QRZ API key."
-                color = "red"
-            else:
-                msg = "⚠️ QRZ returned an unknown response."
-                color = "orange"
-        else:
-            msg = f"❌ HTTP error while uploading to QRZ: {response.status_code}"
-            color = "red"
-    except Exception as e:
-        print(f"QRZ upload exception: {e}")  # Technical debug output
-        msg = "❌ QRZ upload failed: no internet connection or DNS error."
-        color = "red"
-
-    print(msg)
-
-    if not showstatus:
-        QRZ_status_label.config(text=msg, fg=color)
-
-    return response
 
 
 
@@ -2269,7 +1946,7 @@ def wsjtx_adif_listener(config, port):
 
 
 
-# Function that processes an received WSJTX ADIF record
+
 def process_qso(adif_record):
     """
     Process a valid ADIF record and add it to the log.
@@ -2314,24 +1991,18 @@ def process_qso(adif_record):
         "Satellite": extract_field(adif_record, "sat_name") or ""
     }
 
+
     # Debug: Show the processed QSO input
 #    print(f"QSO-input processed {qso_entry}")
 
     # Update the country field based on the callsign
     check_callsign_prefix(callsign, update_ui=False)  # Disable UI update to prevent excessive updates
     qso_entry["Country"] = country_var  # Set the updated country
-    
-    # Upload to QRZ after logging the QSO
-    if upload_qrz_var.get():
-        upload_to_qrz(qso_entry,False)    
-    
+
     # Add the QSO entry to the logbook
     add_qso_to_logbook(qso_entry)
-
-
            
 
-# Function to add a Processed WSTJX ADIF record to the current loaded logbook
 def add_qso_to_logbook(qso_entry):
     """
     Add a QSO entry directly to the loaded logbook and update the logbook window if open.
@@ -2358,20 +2029,18 @@ def add_qso_to_logbook(qso_entry):
             file.truncate()
 
             # Update the last QSO label
-            last_qso_label.config(text=f"Last QSO with {qso_entry['Callsign']} at {qso_entry['Time']} on {float(qso_entry['Frequency']):.3f}MHz in {qso_entry['Mode']}")
+            last_qso_label.config(text=f"Last QSO: {qso_entry['Callsign']} at {qso_entry['Time']}")
+
             # Update the logbook window in the main thread
             for window in root.winfo_children():
                 if isinstance(window, tk.Toplevel) and hasattr(window, 'update_logbook'):
                     root.after(0, window.update_logbook)  # Schedule the update on the main thread
 
-            # Succes Message
+            # Toon een succesmelding
             show_auto_close_messagebox("MiniBook", f"Succes!\n\nQSO with {qso_entry['Callsign']} at {qso_entry['Time']} successfully added!", duration=3000)
 
     except Exception as e:
         show_auto_close_messagebox("MiniBook", f"Error!\n\nFailed to log QSO: {e}", duration=3000)
-
-
-
 
 def show_auto_close_messagebox(title, message, duration=2000):
     def _show():
@@ -2457,8 +2126,6 @@ def extract_adif_field(record, field_name):
 # |_|_\___\___|  \___\___/|_|\_| |_| |_|_\\___/|____|
 #
 #########################################################################################
-
-# Hamlib
 
 if sys.platform.startswith('win'):
     import winreg
@@ -2572,140 +2239,79 @@ def handle_rprtx_error(error_code):
     error_message = error_messages.get(error_code, f"Unknown hamlib error (RPRT {error_code}).")
     messagebox.showerror("hamlib Error", error_message)
 
+
+
+
+
 # Function to update frequency and mode
 stop_frequency_thread = threading.Event()  # Event to stop the thread
 
 def update_frequency_and_mode_thread():
-    global frequency_var, frequency_mhz
+    global frequency_var, frequency_mhz, serial_port
     last_mode = None
 
     while not stop_frequency_thread.is_set():
+
+        # Safely check socket_connection
         if socket_connection is None:
-            print("[Hamlib] No socket connection; stopping thread.")
-            break
+            print("Socket connection is None; exiting thread.")
+            break  # Exit the loop if the socket is invalid
 
         try:
-            # Send both commands first
-            socket_connection.sendall(b"f\n")
-            time.sleep(0.1)  # Give rig a short moment
-            socket_connection.sendall(b"m\n")
+            # Request frequency
+            socket_connection.sendall(b"f\n")  # Safely use socket_connection
+            frequency_hz = socket_connection.recv(1024).decode().strip()
 
-            # Read all responses in one go
-            response = socket_connection.recv(1024).decode()
-            lines = response.strip().splitlines()
+            # Check for RPRT x error codes in frequency response
+            if frequency_hz.startswith("RPRT"):
+                handle_rprtx_error(int(frequency_hz.split()[1]))
+                break  # Stop further processing if there's an error
 
-            #print("[Hamlib] Raw lines:", lines)
+            # Convert frequency from Hz to MHz with 3 decimal places
+            frequency_mhz = float(frequency_hz) / 1_000_000
+            frequency_var.set(f"{frequency_mhz:.3f}")
 
-            freq_line = next((l for l in lines if l.strip().isdigit() and int(l.strip()) >= 1_000_000), None)
-            mode_line = next((l for l in lines if l.strip().isalpha() or '/' in l), None)
+            # Check socket validity again before sending another request
+            if socket_connection is None:
+                print("Socket connection became None; exiting thread.")
+                break
 
-            # --- Frequency ---
-            if freq_line:
-                frequency_mhz = float(freq_line) / 1_000_000
-                frequency_var.set(f"{frequency_mhz:.3f}")
-            else:
-                print(f"[Hamlib] No valid frequency found in: {lines}")
+            # Request mode and filter
+            socket_connection.sendall(b"m\n")  # Safely use socket_connection
+            mode_response = socket_connection.recv(1024).decode().strip()
 
-            # --- Mode ---
-            if mode_line:
-                known_modes = {
-                    'USB', 'LSB', 'CW', 'CWR', 'RTTY', 'RTTYR', 'AM', 'FM', 'WFM', 'AMS',
-                    'PKTLSB', 'PKTUSB', 'PKTFM', 'ECSSUSB', 'ECSSLSB', 'FA',
-                    'SAM', 'SAL', 'SAH', 'DSB'
-                }
-                filtered_mode = next((m for m in known_modes if mode_line.startswith(m)), mode_line)
+            # Check for RPRT x error codes in mode response
+            if mode_response.startswith("RPRT"):
+                handle_rprtx_error(int(mode_response.split()[1]))
+                break  # Stop further processing if there's an error
 
-                if filtered_mode != last_mode:
-                    last_mode = filtered_mode
-                    mode_var.set(filtered_mode)
-                    on_mode_change()
-            else:
-                print(f"[Hamlib] No valid mode found in: {lines}")
+            # Parse mode and filter
+            mode, filter_value = mode_response.split() if ' ' in mode_response else (mode_response, "N/A")
+            matching_modes = {
+                'USB', 'LSB', 'CW', 'CWR', 'RTTY', 'RTTYR', 'AM', 'FM', 'WFM', 'AMS', 
+                'PKTLSB', 'PKTUSB', 'PKTFM', 'ECSSUSB', 'ECSSLSB', 'FA', 'SAM', 'SAL', 'SAH', 'DSB'
+            }
+            filtered_mode = next((m for m in matching_modes if mode.startswith(m)), "No Match")
+            # Check if the mode has changed
+            if filtered_mode != last_mode:
+                last_mode = filtered_mode       # Update the last_mode
+                mode_var.set(filtered_mode)     # Update the variable
+                on_mode_change()                # Only call if changed!
 
-        except (socket.error, ValueError) as e:
-            print(f"[Hamlib] Communication error: {e}")
+
+        except AttributeError:
+            print("Socket connection was None during operation.")
+            break  # Exit if the socket becomes invalid
+
+        except socket.error as e:
+            messagebox.showerror("Error", f"Socket communication error: {e}")
             disconnect_from_hamlib()
             break
 
-        time.sleep(0.1)
+        # Wait before the next update (polling interval in seconds)
+        #time.sleep(1.0)  # Adjust this delay as needed
 
 
-
-# Manual Frequency or Mode input handler
-def handle_callsign_or_frequency_entry(event=None):
-    value = callsign_var.get().strip().upper()
-
-    valid_modes = {'USB', 'LSB', 'CW', 'CWR', 'RTTY', 'RTTYR', 'AM', 'FM', 'WFM', 'AMS', 'PKTLSB', 'PKTUSB', 'PKTFM', 'ECSSUSB', 'ECSSLSB', 'FA', 'SAM', 'SAL', 'SAH', 'DSB'}
-
-    # --- Mode input (e.g. USB, FM) ---
-    if value in valid_modes:
-        if socket_connection is None:
-            messagebox.showwarning("Hamlib Not Connected", "No connection to Hamlib. Mode command not sent.")
-            print("[Hamlib] No socket connection; mode command skipped.")
-            return
-        try:
-            # Send mode command with default passband (0 = use rig default)
-            socket_connection.sendall(f"M {value} 0\n".encode())
-
-            # Optional: read rig response
-            response = socket_connection.recv(1024).decode().strip()
-            print(f"[Hamlib] Rig response to mode set: '{response}'")
-
-            if response.startswith("RPRT") and not response.startswith("RPRT 0"):
-                error_code = int(response.split()[1])
-                handle_rprtx_error(error_code)
-                return
-
-            print(f"[Hamlib] Mode successfully set to {value}")
-            callsign_var.set("")
-            callsign_entry.focus_set()
-            return
-
-        except socket.error as e:
-            print(f"[Hamlib] Socket error during mode set: {e}")
-            handle_rprtx_error(-5)
-            callsign_var.set("")
-            callsign_entry.focus_set()
-            return
-
-    # --- Frequency input (e.g. 7000 kHz) ---
-    if re.fullmatch(r'\d{4,7}', value):
-        try:
-            frequency_khz = int(value)
-
-            if not (1000 <= frequency_khz <= 500000):
-                print(f"[Input] Rejected: {frequency_khz} kHz is out of valid range.")
-                messagebox.showinfo("Invalid Frequency", f"{frequency_khz} kHz is outside accepted range (1–500000 kHz).")
-                return
-
-            if socket_connection is None:
-                messagebox.showwarning("Hamlib Not Connected", "No connection to Hamlib. Frequency command not sent.")
-                print("[Hamlib] No socket connection; frequency command skipped.")
-                return
-
-            frequency_hz = frequency_khz * 1000
-            socket_connection.sendall(f"F {frequency_hz}\n".encode())
-            print(f"[Hamlib] Frequency set to {frequency_hz} Hz")
-
-            callsign_var.set("")
-            callsign_entry.focus_set()
-            return
-
-        except socket.error as e:
-            print(f"[Hamlib] Socket error: {e}")
-            handle_rprtx_error(-5)
-            callsign_var.set("")
-            callsign_entry.focus_set()
-            return
-
-        except ValueError:
-            print("[Input] Invalid numeric frequency format.")
-            callsign_var.set("")
-            callsign_entry.focus_set()
-            return
-
-    # --- Non-mode, non-frequency input (e.g. callsigns) ---
-    print(f"[Input] Ignored: '{value}' is not a valid kHz frequency or supported mode.")
 
 
 
@@ -2719,125 +2325,104 @@ def handle_callsign_or_frequency_entry(event=None):
 #
 #########################################################################################                              
 
+# Function for Station Setup menu
 def open_station_setup():
     global Station_Setup_Window
-
+    # Check if the window is already open
     if Station_Setup_Window is not None and Station_Setup_Window.winfo_exists():
-        Station_Setup_Window.lift()
-        return
+        Station_Setup_Window.lift()  # Bring the existing window to the front
+        return    
 
     Station_Setup_Window = tk.Toplevel(root)
     Station_Setup_Window.title("Station Setup")
     Station_Setup_Window.resizable(False, False)
 
-    # Force window to stay on top and modal
-    Station_Setup_Window.transient(root)
-    Station_Setup_Window.grab_set()
-    Station_Setup_Window.focus_set()
-    Station_Setup_Window.lift()
-
-    # Center the window
-    Station_Setup_Window.update_idletasks()
+    # Center the Station_Setup_Window relative to root
+    Station_Setup_Window.update_idletasks()  # Zorg dat afmetingen bekend zijn
     w = Station_Setup_Window.winfo_width()
+
     root_x = root.winfo_x()
     root_y = root.winfo_y()
     root_w = root.winfo_width()
+
     x = root_x + (root_w // 2) - (w // 2)
-    y = root_y
-    Station_Setup_Window.geometry(f"+{x}+{y}")
+    y = root_y  # zelfde top als root
 
-    # Lokale variabelen
-    local_callsign = tk.StringVar(value=my_callsign_var.get())
-    local_operator = tk.StringVar(value=my_operator_var.get())
-    local_locator = tk.StringVar(value=my_locator_var.get())
-    local_location = tk.StringVar(value=my_location_var.get())
-    local_pota = tk.StringVar(value=my_pota_var.get())
-    local_wwff = tk.StringVar(value=my_wwff_var.get())
-    local_qrzapi = tk.StringVar(value=my_qrzapi_var.get())
-    local_upload_qrz = tk.BooleanVar(value=upload_qrz_var.get())
+    Station_Setup_Window.geometry(f"+{x}+{y}") 
 
-    # Uppercase automatisering
-    local_callsign.trace("w", lambda *args: local_callsign.set(local_callsign.get().upper()))
-    local_operator.trace("w", lambda *args: local_operator.set(local_operator.get().upper()))
-    local_locator.trace("w", lambda *args: local_locator.set(local_locator.get().upper()))
-    local_wwff.trace("w", lambda *args: local_wwff.set(local_wwff.get().upper()))
-    local_pota.trace("w", lambda *args: local_pota.set(local_pota.get().upper()))
+    # Save original values to restore on cancel
+    original_callsign   = my_callsign_var.get()
+    original_locator    = my_locator_var.get()
+    original_location   = my_location_var.get()
+    original_operator   = my_operator_var.get()
+    original_pota       = my_pota_var.get()
+    original_wwff       = my_wwff_var.get()
+  
+    tk.Label(Station_Setup_Window, text="Station Setup", font=('Arial', 10, 'bold')).grid(row=0, column=0, columnspan="2", padx=10, pady=1)
 
-    # Opbouw van het venster
-    row = 0
-    tk.Label(Station_Setup_Window, text="Station Setup", font=('Arial', 10, 'bold')).grid(row=row, column=0, columnspan=2, padx=10, pady=1)
 
-    row += 1
-    tk.Label(Station_Setup_Window, text="Callsign:", font=('Arial', 10)).grid(row=row, column=0, padx=10, pady=1, sticky='w')
-    tk.Entry(Station_Setup_Window, textvariable=local_callsign, font=('Arial', 10, 'bold')).grid(row=row, column=1, padx=10, pady=5, sticky='w')
+    my_callsign_var.trace("w", lambda *args: my_callsign_var.set(my_callsign_var.get().upper()))
+    # Label & Entry for My Callsign
+    tk.Label(Station_Setup_Window, text="Callsign:", font=('Arial', 10)).grid(row=1, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(Station_Setup_Window, textvariable=my_callsign_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=10, pady=5, sticky='w')
 
-    row += 1
-    tk.Label(Station_Setup_Window, text="Operator:", font=('Arial', 10)).grid(row=row, column=0, padx=10, pady=1, sticky='w')
-    tk.Entry(Station_Setup_Window, textvariable=local_operator, font=('Arial', 10, 'bold')).grid(row=row, column=1, padx=10, pady=5, sticky='w')
+    my_operator_var.trace("w", lambda *args: my_operator_var.set(my_operator_var.get().upper()))
+    # Label & Entry for My Operator
+    tk.Label(Station_Setup_Window, text="Operator:", font=('Arial', 10)).grid(row=2, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(Station_Setup_Window, textvariable=my_operator_var, font=('Arial', 10, 'bold')).grid(row=2, column=1, padx=10, pady=5, sticky='w')
 
-    row += 1
-    tk.Label(Station_Setup_Window, text="Locator:", font=('Arial', 10)).grid(row=row, column=0, padx=10, pady=1, sticky='w')
-    tk.Entry(Station_Setup_Window, textvariable=local_locator, font=('Arial', 10, 'bold')).grid(row=row, column=1, padx=10, pady=5, sticky='w')
+    my_locator_var.trace("w", lambda *args: my_locator_var.set(my_locator_var.get().upper()))
+    # Label & Entry for My Locator
+    tk.Label(Station_Setup_Window, text="Locator:", font=('Arial', 10)).grid(row=3, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(Station_Setup_Window, textvariable=my_locator_var, font=('Arial', 10, 'bold')).grid(row=3, column=1, padx=10, pady=5, sticky='w')
 
-    row += 1
-    tk.Label(Station_Setup_Window, text="Location:", font=('Arial', 10)).grid(row=row, column=0, padx=10, pady=1, sticky='w')
-    tk.Entry(Station_Setup_Window, textvariable=local_location, font=('Arial', 10, 'bold')).grid(row=row, column=1, padx=10, pady=5, sticky='w')
+    # Label & Entry for My Location
+    tk.Label(Station_Setup_Window, text="Location:", font=('Arial', 10)).grid(row=4, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(Station_Setup_Window, textvariable=my_location_var, font=('Arial', 10, 'bold')).grid(row=4, column=1, padx=10, pady=5, sticky='w')    
 
-    row += 1
-    tk.Label(Station_Setup_Window, text="POTA No.:", font=('Arial', 10)).grid(row=row, column=0, padx=10, pady=1, sticky='w')
-    pota_entry = tk.Entry(Station_Setup_Window, textvariable=local_pota, font=('Arial', 10, 'bold'))
-    pota_entry.grid(row=row, column=1, padx=10, pady=5, sticky='w')
-    
-    row += 1
-    tk.Label(Station_Setup_Window, text="Flora Fauna No.:", font=('Arial', 10)).grid(row=row, column=0, padx=10, pady=1, sticky='w')
-    wwff_entry = tk.Entry(Station_Setup_Window, textvariable=local_wwff, font=('Arial', 10, 'bold'))
-    wwff_entry.grid(row=row, column=1, padx=10, pady=5, sticky='w')
-    
-    row += 1
-    ttk.Separator(Station_Setup_Window, orient='horizontal').grid(row=row, column=0, columnspan=2, sticky='ew', padx=5, pady=0)
+    # Label & Entry for My POTA
+    tk.Label(Station_Setup_Window, text="POTA No.:", font=('Arial', 10)).grid(row=5, column=0, padx=10, pady=1, sticky='w')
+    my_pota_entry = tk.Entry(Station_Setup_Window, textvariable=my_pota_var, font=('Arial', 10, 'bold'))
+    my_pota_entry.grid(row=5, column=1, padx=10, pady=5, sticky='w')    
+    my_pota_entry.bind("<KeyRelease>", lambda event: format_pota_input(event, my_pota_entry, my_pota_var))
 
-    row += 1
-    tk.Label(Station_Setup_Window, text="QRZ Upload:", font=('Arial', 10, "bold")).grid(row=row, column=0, columnspan=2, padx=10, pady=1, sticky='ew')
+    # Label & Entry for My WWFF
+    tk.Label(Station_Setup_Window, text="Flora Fauna No.:", font=('Arial', 10)).grid(row=6, column=0, padx=10, pady=1, sticky='w')
+    my_wwff_entry = tk.Entry(Station_Setup_Window, textvariable=my_wwff_var, font=('Arial', 10, 'bold'))
+    my_wwff_entry.grid(row=6, column=1, padx=10, pady=5, sticky='w')    
+    my_wwff_entry.bind("<KeyRelease>", lambda event: format_wwff_input(event, my_wwff_entry, my_wwff_var))
 
-    row += 1
-    tk.Checkbutton(Station_Setup_Window, text="Upload to QRZ", variable=local_upload_qrz).grid(row=row, column=0, columnspan=2, sticky="w", padx=10)
-
-    row += 5
-    tk.Label(Station_Setup_Window, text="QRZ API Key:", font=('Arial', 10)).grid(row=row, column=0, padx=10, pady=1, sticky='w')
-    tk.Entry(Station_Setup_Window, textvariable=local_qrzapi, font=('Arial', 10, 'bold')).grid(row=row, column=1, padx=10, pady=5, sticky='w')
-
-    row += 1
-    tk.Label(Station_Setup_Window, text="API key needs to match Callsign!\nkey must be in format:\nXXXX-XXXX-XXXX-XXXX", font=('Arial', 8, "bold")).grid(row=row, column=0, columnspan=2, padx=10, pady=1, sticky='ew')
 
     def close_window():
         global Station_Setup_Window
         Station_Setup_Window.destroy()
         Station_Setup_Window = None
 
+    # Save button
     def save_setup():
-        if not is_valid_locator(local_locator.get().strip()):
+        locator = my_locator_var.get().strip()
+
+        # Validate locator field
+        if not is_valid_locator(locator):
             messagebox.showerror("Invalid Locator", "The Maidenhead locator must be at least 4 characters and valid.\nExample: FN31 or FN31TK")
             return
-        # Set global values from local vars
-        my_callsign_var.set(local_callsign.get())
-        my_operator_var.set(local_operator.get())
-        my_locator_var.set(local_locator.get())
-        my_location_var.set(local_location.get())
-        my_pota_var.set(local_pota.get())
-        my_wwff_var.set(local_wwff.get())
-        my_qrzapi_var.set(local_qrzapi.get())
-        upload_qrz_var.set(local_upload_qrz.get())
-
-        save_station_setup()
-        close_window()
+        else:
+            save_station_setup()
+            close_window()
 
     def cancel_setup():
+        my_callsign_var.set(original_callsign)
+        my_locator_var.set(original_locator)
+        my_location_var.set(original_location)
+        my_operator_var.set(original_operator)
+        my_pota_var.set(original_pota)        
+        my_wwff_var.set(original_wwff)
         close_window()
 
-    row += 2
-    tk.Button(Station_Setup_Window, text="Save & Exit", command=save_setup, width=10, height=2).grid(row=row, column=0, padx=20, pady=10, sticky="w")
-    tk.Button(Station_Setup_Window, text="Cancel", command=cancel_setup, width=10, height=2).grid(row=row, column=1, padx=20, pady=10, sticky="e")
-
+    tk.Button(Station_Setup_Window, text="Save & Exit", command=save_setup, width=10, height=2).grid(row=20, column=0, columnspan=2, padx=20, pady=10, sticky="w")
+    tk.Button(Station_Setup_Window, text="Cancel", command=cancel_setup, width=10, height=2).grid(row=20, column=0, columnspan=2, padx=20, pady=10, sticky="e")
+    
+    # Handle window close event
     Station_Setup_Window.protocol("WM_DELETE_WINDOW", close_window)
 
 
@@ -2855,12 +2440,6 @@ def open_preferences():
     Preference_Window = tk.Toplevel(root)
     Preference_Window.title("Preferences")
     Preference_Window.resizable(False, False)
-    # Force window to stay on top and modal
-    Preference_Window.transient(root)
-    Preference_Window.grab_set()
-    Preference_Window.focus_set()
-    Preference_Window.lift()
-
 
     # Center the Preference Window relative to root
     Preference_Window.update_idletasks()  # Zorg dat afmetingen bekend zijn
@@ -3117,19 +2696,13 @@ def load_station_setup():
                 my_location_var.set(station_info.get("Location", ""))
                 my_wwff_var.set(station_info.get("WWFF", ""))
                 my_pota_var.set(station_info.get("POTA", ""))
-                my_qrzapi_var.set(station_info.get("QRZAPI", ""))
-                upload_qrz_var.set(bool(station_info.get("QRZUpload", False)))
 
-
-
-                # Displays on root window in status bar
                 my_operator_label.config(textvariable=my_operator_var)
                 my_callsign_label.config(textvariable=my_callsign_var)
                 my_locator_label.config(textvariable=my_locator_var)
                 my_location_label.config(textvariable=my_location_var)
                 my_wwff_label.config(textvariable=my_wwff_var)
                 my_pota_label.config(textvariable=my_pota_var)
-                
 
         except (json.JSONDecodeError, KeyError) as e:
             messagebox.showerror("Error", f"Failed to load station details from logbook: {e}")
@@ -3154,9 +2727,7 @@ def save_station_setup():
                     "Locator": my_locator_var.get().upper(),
                     "Location" : my_location_var.get(),
                     "WWFF": my_wwff_var.get(),
-                    "POTA": my_pota_var.get(),
-                    "QRZAPI": my_qrzapi_var.get(),
-                    "QRZUpload": upload_qrz_var.get()
+                    "POTA": my_pota_var.get()
                 }
 
                 # Write back to the JSON file
@@ -3368,6 +2939,19 @@ def on_query():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 # About Window
 def show_about():
     global About_Window
@@ -3488,7 +3072,9 @@ def load_window_position(window, name):
 
 # Exit program
 def exit_program():
-    response = messagebox.askyesno("Confirmation", "Are you sure you want to quit the program?")
+    #response = messagebox.askyesno("Confirmation", "Are you sure you want to quit the program?")
+    
+    response="yes"
     
     if response:  # If the user clicked "Yes"
         disconnect_from_hamlib()
@@ -3590,10 +3176,8 @@ def check_callsign_prefix(callsign, update_ui=True):  # Add 'update_ui' paramete
 
         # Update UI labels and image only if update_ui is True
         if update_ui:
-            country_label.config(text=f"{matching_info['name']}")
-            continent_label.config(text=f"{continent_name}")
-            dxcc_cq.config(text=f"{cq}")
-            dxcc_itu.config(text=f"{itu}")
+            country_label.config(text=f"{matching_info['name']}, {continent_name}")
+            dxcc_cqitu.config(text=f"CQ Zone: {cq}, ITU ZONE: {itu}")
             display_image(entityCode, dxcc_image_label, FLAG_IMAGE_WIDTH , FLAG_IMAGE_HEIGHT)
     else:
         # Set default values for 'Not Found' case
@@ -3604,23 +3188,14 @@ def check_callsign_prefix(callsign, update_ui=True):  # Add 'update_ui' paramete
         # Update UI labels and image only if update_ui is True
         if update_ui:
             #country_label.config(text="Not Found")
-            country_label.config(text="----")
-            continent_label.config(text="----")
-            dxcc_cq.config(text="----")
-            dxcc_itu.config(text="----")
+            country_label.config(text="")
+            dxcc_cqitu.config(text="")
             display_image(0, dxcc_image_label, FLAG_IMAGE_WIDTH , FLAG_IMAGE_HEIGHT)
 
 
-#########################################################################################
-# __      _____  ___ _  _____ ___    ___ ___ ___ ___  ___ ___ 
-# \ \    / / _ \| _ \ |/ / __|   \  | _ ) __| __/ _ \| _ \ __|
-#  \ \/\/ / (_) |   / ' <| _|| |) | | _ \ _|| _| (_) |   / _| 
-#   \_/\_/ \___/|_|_\_|\_\___|___/  |___/___|_| \___/|_|_\___|
-#                                                             
-#########################################################################################
 
-def normalize_callsign(call):
-    return call.upper().split('/')[0]  # Strip anything after first slash
+
+
 
 # Function Worked Before
 def update_worked_before_tree(*args):
@@ -3636,7 +3211,7 @@ def update_worked_before_tree(*args):
             return
 
     entered_call = callsign_var.get().strip().upper()
-    if not entered_call:
+    if not entered_call or len(entered_call) < 1:
         workedb4_tree.delete(*workedb4_tree.get_children())
         return
 
@@ -3652,35 +3227,16 @@ def update_worked_before_tree(*args):
             return datetime.min
 
     matches.sort(key=sort_key, reverse=True)
+
     workedb4_tree.delete(*workedb4_tree.get_children())
 
-    # Tag styles
     workedb4_tree.tag_configure("oddrow", background="lightblue")
     workedb4_tree.tag_configure("evenrow", background="white")
-    workedb4_tree.tag_configure("dupe_today", foreground="black", background="orange", font=("TkDefaultFont", 9, "bold"))
-
-    # Get today's date
-    today = date_var.get().strip()
-
-    # Get current band and mode (you may need to adapt this!)
-    current_band = band_var.get().strip() if 'band_var' in globals() else ""
-    current_mode = mode_var.get().strip().upper() if 'mode_var' in globals() else ""
 
     row_color = True
     for qso in matches:
         tag = "oddrow" if row_color else "evenrow"
         row_color = not row_color
-
-        qso_band = qso.get("Band", "").strip()
-        qso_mode = qso.get("Mode", "").strip().upper()
-        qso_date = qso.get("Date", "").strip()
-
-        # Check for duplicate (same day, band, mode)
-        if (normalize_callsign(qso.get("Callsign", "")) == normalize_callsign(entered_call) and
-            qso.get("Date", "").strip() == today and
-            qso.get("Band", "").strip() == current_band and
-            qso.get("Mode", "").strip().upper() == current_mode):
-            tag = "dupe_today"
 
         workedb4_tree.insert("", "end", values=(
             qso.get("Callsign", ""),
@@ -3748,11 +3304,8 @@ my_callsign_var = tk.StringVar()
 my_operator_var = tk.StringVar()
 my_pota_var = tk.StringVar()
 my_wwff_var = tk.StringVar()
-my_qrzapi_var = tk.StringVar()
 wwff_var = tk.StringVar()
-wwff_var.trace("w", lambda *args: wwff_var.set(wwff_var.get().upper()))
 pota_var = tk.StringVar()
-pota_var.trace("w", lambda *args: pota_var.set(pota_var.get().upper()))
 country_var = tk.StringVar()
 continent_var = tk.StringVar()
 rst_sent_var = tk.StringVar(value="59")
@@ -3769,7 +3322,6 @@ datetime_tracking_enabled = tk.BooleanVar(value=True)  # Enabled by default
 freqmode_tracking_var = tk.BooleanVar(value=False)
 qrz_username_var = tk.StringVar()
 qrz_password_var = tk.StringVar()
-upload_qrz_var = tk.BooleanVar()
 
 # Preparation of hamlib in Threaded mode
 hamlib_process = None
@@ -3922,7 +3474,7 @@ root.grid_columnconfigure(2, weight=0, minsize=50)
 root.grid_columnconfigure(3, weight=0, minsize=50)
 root.grid_columnconfigure(4, weight=0, minsize=50)
 root.grid_columnconfigure(5, weight=0, minsize=50)
-root.grid_columnconfigure(6, weight=0, minsize=50)
+root.grid_columnconfigure(5, weight=0, minsize=50)
 
 
 #------------- Field/Label positions Row/Column/Span --------------
@@ -4066,7 +3618,7 @@ QSL_info_header_col             = 2
 QSL_info_header_colspan         = 1
 QSL_info_row                    = 11
 QSL_info_col                    = 3
-QSL_info_colspan                = 4
+QSL_info_colspan                = 3
 
 Address_header_row             = 12  
 Address_header_col             = 0
@@ -4104,7 +3656,7 @@ Seperator_2_col                = 0
 Seperator_2_colspan            = 7
 
 #--------------------------------------
-DXCC_frame_row                 = 16
+DXCC_frame_row                 = 15
 DXCC_frame_col                 = 0
 DXCC_frame_colspan             = 99
 
@@ -4124,32 +3676,30 @@ Log_button_col                 = 6
 Log_button_colspan             = 1
 Log_button_rowspan             = 3
 
-#--------------------------------------
-
-Seperator_3_row                = 30
+Seperator_3_row                = 16
 Seperator_3_col                = 0
 Seperator_3_colspan            = 7
 
-workedb4_row                   = 40
+#--------------------------------------
 
-Last_qso_row                   = 50
+workedb4_row                   = 18
+
+Last_qso_row                   = 20
 Last_qso_col                   = 0
 Last_qso_colspan               = 3
 
-QRZ_status_header_row          = 50
-QRZ_status_header_col          = 0
-QRZ_status_header_colspan      = 9
-QRZ_status_header_rowspan      = 1
+DXCC_Info_row                  = 20
+DXCC_Info_col                  = 0
+DXCC_Info_colspan              = 7
+
 
 y_padding                      = 2
 
 bg_color = root.cget("bg")
 
-
-
 # MY INFO FRAME
 my_info_frame = tk.Frame(root, bg="lightgrey")
-my_info_frame.grid(row=My_info_frame_row, column=My_info_frame_col, columnspan=My_info_frame_colspan, sticky='ew', padx=5, pady=2)
+my_info_frame.grid(row=My_info_frame_row, column=My_info_frame_col, columnspan=My_info_frame_colspan, sticky='we', padx=5, pady=2)
 
 # Configure columns to stretch and control alignment
 my_info_frame.columnconfigure(0, weight=1)  # left
@@ -4221,7 +3771,6 @@ def on_tab_press(event):
 tk.Label(root, text="Callsign:", font=('Arial', 10)).grid(row=Callsign_header_row, column=Callsign_header_col, columnspan=Callsign_header_colspan, padx=5, pady=y_padding, sticky='e')
 callsign_entry = tk.Entry(root, textvariable=callsign_var, font=('Arial', 10, 'bold'))
 callsign_entry.grid(row=Callsign_row, column=Callsign_col, columnspan=Callsign_colspan, padx=5, pady=y_padding, sticky='w')
-callsign_entry.bind("<Return>", handle_callsign_or_frequency_entry)
 callsign_entry.bind("<Tab>", on_tab_press)
 callsign_entry.bind("<FocusIn>", set_focus_color)
 callsign_entry.bind("<FocusOut>", reset_focus_color)
@@ -4299,6 +3848,7 @@ comment_entry.bind("<FocusOut>", reset_focus_color)
 tk.Label(root, text="WWFF:", font=('Arial', 10)).grid(row=WWFF_header_row, column=WWFF_header_col, columnspan=WWFF_header_colspan, padx=5, pady=y_padding, sticky='e')
 wwff_entry = tk.Entry(root, textvariable=wwff_var, font=('Arial', 10, 'bold'))
 wwff_entry.grid(row=WWFF_row, column=WWFF_col, columnspan=WWFF_colspan, padx=5, pady=y_padding, sticky='ew')
+wwff_entry.bind("<KeyRelease>", lambda event: format_wwff_input(event, wwff_entry, wwff_var))
 wwff_entry.bind("<FocusIn>", set_focus_color)
 wwff_entry.bind("<FocusOut>", reset_focus_color)
 
@@ -4306,6 +3856,7 @@ wwff_entry.bind("<FocusOut>", reset_focus_color)
 tk.Label(root, text="POTA:", font=('Arial', 10)).grid(row=POTA_header_row, column=POTA_header_col, columnspan=POTA_header_colspan, padx=5, pady=y_padding, sticky='e')
 pota_entry = tk.Entry(root, textvariable=pota_var, font=('Arial', 10, 'bold'))
 pota_entry.grid(row=POTA_row, column=POTA_col, columnspan=POTA_colspan, padx=5, pady=y_padding, sticky='ew')
+pota_entry.bind("<KeyRelease>", lambda event: format_pota_input(event, pota_entry, pota_var))
 pota_entry.bind("<FocusIn>", set_focus_color)
 pota_entry.bind("<FocusOut>", reset_focus_color)
 
@@ -4319,7 +3870,7 @@ tk.Label(root, text="Extra QRZ Lookup results", bg='lightgrey', font=('Arial', 1
 # Address
 tk.Label(root, text="QSL Info:", font=('Arial', 10)).grid(row=QSL_info_header_row, column=QSL_info_header_col, columnspan=QSL_info_header_colspan, padx=5, pady=y_padding, sticky='e')
 qsl_info_entry = tk.Entry(root, textvariable=qsl_info_var, font=('Arial', 10, 'bold'))
-qsl_info_entry.grid(row=QSL_info_row, column=QSL_info_col, columnspan=QSL_info_colspan, padx=(5,15), pady=y_padding, sticky='ew')
+qsl_info_entry.grid(row=QSL_info_row, column=QSL_info_col, columnspan=QSL_info_colspan, padx=5, pady=y_padding, sticky='ew')
 qsl_info_entry.bind("<FocusIn>", set_focus_color)
 qsl_info_entry.bind("<FocusOut>", reset_focus_color)
 
@@ -4350,60 +3901,23 @@ heading_entry = tk.Entry(root, textvariable=heading_var, font=('Arial', 10, 'bol
 heading_entry.grid(row=Heading_entry_row, column=Heading_entry_col, columnspan=Heading_entry_colspan, rowspan=Heading_entry_rowspan, padx=5, pady=y_padding, sticky='w')
 heading_entry.configure(takefocus=False)
 
+# Frame
+dxcc_frame = tk.Frame(dxcc_window, bg=bg_color)
+dxcc_frame.grid(row=DXCC_frame_row, column=DXCC_frame_col, columnspan=DXCC_frame_colspan, sticky="nsew", pady=(0, 0))
 
-# ---------------------
-separator = ttk.Separator(root, orient='horizontal')
-separator.grid(row=Seperator_2_row, column=Seperator_2_col, columnspan=Seperator_2_colspan, sticky='ew', padx=5)
+# Configure columns to center contents
+dxcc_frame.columnconfigure(0, weight=1)
+dxcc_frame.columnconfigure(1, weight=0)
+dxcc_frame.columnconfigure(2, weight=0)
+dxcc_frame.columnconfigure(3, weight=1)
 
-dxcc_frame = tk.Frame(root, bg=bg_color)
-dxcc_frame.grid(row=DXCC_frame_row, column=DXCC_frame_col, columnspan=DXCC_frame_colspan, sticky='ew', padx=10, pady=0)
-
-
-
-# Image label with fixed pixel width
+# Image label (centered via column 1)
 dxcc_image_label = tk.Label(dxcc_frame, anchor='center', bg=bg_color)
-dxcc_image_label.grid(row=0, column=0, rowspan=2, padx=5, sticky='ns')
+dxcc_image_label.grid(row=0, column=1, padx=5, pady=0, sticky="")
 
-# Country label
-tk.Label(dxcc_frame, text="Country:", font=('Arial', 9), bg=bg_color).grid(row=0, column=1, columnspan=1, pady=0, sticky='e')
-country_label = tk.Label(dxcc_frame, text="----", font=('Arial', 9, 'bold'), bg=bg_color)
-country_label.grid(row=0, column=2, columnspan=2,sticky='w')
-
-# Continent label
-tk.Label(dxcc_frame, text="Continent:", font=('Arial', 9), bg=bg_color).grid(row=1, column=1, columnspan=1, pady=0, sticky='e')
-continent_label = tk.Label(dxcc_frame, text="----", font=('Arial', 9, 'bold'), bg=bg_color)
-continent_label.grid(row=1, column=2, columnspan=2, sticky='w')
-
-separator = ttk.Separator(dxcc_frame, orient='vertical')
-separator.grid(row=0, column=3, rowspan=2, sticky='ns', padx=5)
-
-# CQ zone label
-tk.Label(dxcc_frame, text="CQ Zone:", font=('Arial', 9), bg=bg_color).grid(row=0, column=5, columnspan=1, pady=0, sticky='e')
-dxcc_cq = tk.Label(dxcc_frame, text="----", font=('Arial', 9, 'bold'), bg=bg_color)
-dxcc_cq.grid(row=0, column=6, columnspan=3, sticky='w')
-
-# ITU zone label
-tk.Label(dxcc_frame, text="ITU Zone:", font=('Arial', 9), bg=bg_color).grid(row=1, column=5, columnspan=1,pady=0, sticky='e')
-dxcc_itu = tk.Label(dxcc_frame, text="----", font=('Arial', 9, 'bold'), bg=bg_color)
-dxcc_itu.grid(row=1, column=6, columnspan=3, sticky='w')
-
-
-# Kolommen configureren voor responsief gedrag (optioneel)
-dxcc_frame.grid_columnconfigure(0, weight=0)
-dxcc_frame.grid_columnconfigure(2, weight=0, minsize=250)
-
-
-
-# ---------------------
-separator = ttk.Separator(root, orient='horizontal')
-separator.grid(row=Seperator_3_row, column=Seperator_3_col, columnspan=Seperator_3_colspan, sticky='ew', padx=5)#
-
-
-
-
-
-
-
+# Country label (right next to image, centered via column 2)
+country_label = tk.Label(dxcc_frame, font=('Arial', 10, 'bold'), anchor='center', bg=bg_color)
+country_label.grid(row=0, column=2, padx=5, pady=0, sticky="")
 
 
 # --- Lookup Button ---
@@ -4421,8 +3935,21 @@ wipe_button = tk.Button(root, text="Wipe\nF1", command=reset_fields, bd=3, relie
 wipe_button.grid(row=Wipe_button_row, column=Wipe_button_col, columnspan=Wipe_button_colspan, rowspan=Wipe_button_rowspan, padx=15, pady=0, sticky='w')
 wipe_button.configure(takefocus=False)
 
+# ---------------------
+separator = ttk.Separator(root, orient='horizontal')
+separator.grid(row=Seperator_2_row, column=Seperator_2_col, columnspan=Seperator_2_colspan, sticky='ew', padx=5)
 
+# LAST QSO
+last_qso_label = tk.Label(root, fg="blue", padx=5, pady=y_padding, font=('Arial', 8, 'bold'))
+last_qso_label.grid(row=Last_qso_row, column=Last_qso_col, columnspan=Last_qso_colspan,padx=5, sticky='w')
 
+# DXCC INFO
+dxcc_cqitu = tk.Label(root, font=('Arial', 8))
+dxcc_cqitu.grid(row=DXCC_Info_row, column=DXCC_Info_col, columnspan=DXCC_Info_colspan, padx=5,  sticky='e')
+
+# ---------------------
+separator = ttk.Separator(root, orient='horizontal')
+separator.grid(row=Seperator_3_row, column=Seperator_3_col, columnspan=Seperator_3_colspan, sticky='ew', padx=5)
 
 
 
@@ -4457,15 +3984,6 @@ for col in cols:
     workedb4_tree.column(col, anchor="center", width=80)
 
 workedb4_tree.pack(fill="both", expand=True)
-
-
-# QRZ Status
-QRZ_status_label = tk.Label(root, font=('Arial', 8, 'bold'))
-QRZ_status_label.grid(row=QRZ_status_header_row, column=QRZ_status_header_col, columnspan=QRZ_status_header_colspan, rowspan=QRZ_status_header_rowspan, padx=15, pady=y_padding, sticky='e')
-
-# LAST QSO
-last_qso_label = tk.Label(root, fg="blue", font=('Arial', 8, 'bold'))
-last_qso_label.grid(row=Last_qso_row, column=Last_qso_col, columnspan=Last_qso_colspan, padx=5, sticky='w')
 
 
 
