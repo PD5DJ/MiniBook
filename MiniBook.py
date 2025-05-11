@@ -3307,13 +3307,16 @@ def query_callsign(session_key, callsign):
     }
     return data
 
-def on_query():
+def threaded_on_query():
+    threading.Thread(target=on_query_thread, daemon=True).start()
+
+def on_query_thread():
     username = config.get("QRZ", "username", fallback="").strip()
     password = config.get("QRZ", "password", fallback="").strip()
     callsign = callsign_var.get().strip()
 
     if not username or not password:
-        messagebox.showerror("Missing Credentials", "QRZ username/password not found in config.ini")
+        root.after(0, lambda: messagebox.showerror("Missing Credentials", "QRZ username/password not found in config.ini"))
         return
 
     if not callsign:
@@ -3323,41 +3326,45 @@ def on_query():
 
     if not session_key:
         if error:
-            if "Invalid" in error or "incorrect" in error.lower() or "not authorized" in error.lower():
-                messagebox.showerror("QRZ Login Failed", "Username or password incorrect.")
-            else:
-                messagebox.showerror("Connection Error", error)
+            def show_error():
+                if "Invalid" in error or "incorrect" in error.lower() or "not authorized" in error.lower():
+                    messagebox.showerror("QRZ Login Failed", "Username or password incorrect.")
+                else:
+                    messagebox.showerror("Connection Error", error)
+            root.after(0, show_error)
         return
 
     data = query_callsign(session_key, callsign)
 
-    locator_var.set(data.get("grid", ""))
-    name_var.set(data.get("name", ""))
-    city_var.set(data.get("city", ""))
-    address_var.set(data.get("address", ""))
-    zipcode_var.set(data.get("zipcode", ""))
-    qsl_info_var.set(data.get("qslmgr", ""))
+    def update_gui():
+        locator_var.set(data.get("grid", ""))
+        name_var.set(data.get("name", ""))
+        city_var.set(data.get("city", ""))
+        address_var.set(data.get("address", ""))
+        zipcode_var.set(data.get("zipcode", ""))
+        qsl_info_var.set(data.get("qslmgr", ""))
 
-    try:
-        my_lat, my_lon = locator_to_latlon(my_locator_var.get())
-        target_lat, target_lon = None, None
+        try:
+            my_lat, my_lon = locator_to_latlon(my_locator_var.get())
+            target_lat, target_lon = None, None
 
-        if data.get("lat") and data.get("lon"):
-            target_lat = float(data["lat"])
-            target_lon = float(data["lon"])
-        elif data.get("grid"):
-            target_lat, target_lon = locator_to_latlon(data["grid"])
+            if data.get("lat") and data.get("lon"):
+                target_lat = float(data["lat"])
+                target_lon = float(data["lon"])
+            elif data.get("grid"):
+                target_lat, target_lon = locator_to_latlon(data["grid"])
 
-        if target_lat is not None and target_lon is not None:
-            sp = round(calculate_azimuth(my_lat, my_lon, target_lat, target_lon))
-            lp = round((sp + 180) % 360)
-            heading_var.set(f"SP: {sp}°  /  LP: {lp}°")
-        else:
+            if target_lat is not None and target_lon is not None:
+                sp = round(calculate_azimuth(my_lat, my_lon, target_lat, target_lon))
+                lp = round((sp + 180) % 360)
+                heading_var.set(f"SP: {sp}°  /  LP: {lp}°")
+            else:
+                heading_var.set("")
+        except Exception as e:
+            print("Azimuth calculation failed:", e)
             heading_var.set("")
-    except Exception as e:
-        print("Azimuth calculation failed:", e)
-        heading_var.set("")
 
+    root.after(0, update_gui)
 
 
 
@@ -4210,7 +4217,7 @@ time_entry.grid(row=Time_row, column=Time_col, columnspan=Time_colspan, padx=5, 
 time_entry.configure(takefocus=False)
 
 def on_tab_press(event):
-    on_query()
+    threaded_on_query()
     return None
 
 # CALLSIGN
@@ -4403,7 +4410,7 @@ separator.grid(row=Seperator_3_row, column=Seperator_3_col, columnspan=Seperator
 
 
 # --- Lookup Button ---
-lookup_button = tk.Button(root, text="Lookup\nF2", command=on_query, bd=3, relief='raised',width=10, height=2, bg='yellow', fg='black', font=('Arial', 10, 'bold'))
+lookup_button = tk.Button(root, text="Lookup\nF2", command=threaded_on_query, bd=3, relief='raised',width=10, height=2, bg='yellow', fg='black', font=('Arial', 10, 'bold'))
 lookup_button.grid(row=Lookup_button_row, column=Lookup_button_col, columnspan=Lookup_button_colspan, rowspan=Lookup_button_rowspan, padx=15, pady=0, sticky='w')
 lookup_button.configure(takefocus=False)
 
