@@ -32,13 +32,15 @@ The MiniBook Logbook Application is a user-friendly tool designed to manage your
 - **QSO Management**: Add, edit, and delete QSO records.
 - **Search Functionality**: Easily search for specific callsigns or other QSO details.
 - **File Handling**: Load and save logbook files in JSON format (.mbk MiniBook files).
-- **Station Setup**: Preset My Callsign, My Locator, and My Location for each QSO.
+- **Station Setup**: Preset My Callsign, My Operator, My Locator, and My Location, My POTA and My WWFF References for each QSO.
 - **QSO Viewing**: View, filter, and sort QSO records in a table format.
 - **Logging**: Automatically logs your station setup details with each QSO.
 - **Import / Export ADIF**: Use ADIF format for interoperability with other logging software and contest submissions.
 - **Rig CAT Support**: Supports Hamlib, allowing direct or remote connection to your radio.
 - **UDP QSO Log Support**: Receive QSO logs from other programs like WSJT-X.
 - **QRZ Lookup Support**: You can now Lookup Callsigns with a QRZ Lookup subscription
+- **QRZ Log upload Support**: You can now upload your logs woth a QRZ API Key
+- **Limited Rig control!**: Entering frequenct in KHz will set radio, also with modes: "USB,LSB,AM,FM,CW,RTTY"
 
 ## 3. User Interface Overview
 
@@ -50,22 +52,28 @@ When you open the application, you’ll see the main window to interact with you
 - **File**
   - **Load Logbook**: Load a MiniBook `.mbk` file.
   - **New Logbook**: Create a new MiniBook file.
-  - **Station Setup**: Set global parameters like My Callsign, My Locator, and My Location.
+- **Station Setup**
+  - Set global parameters like My Callsign, My Operator, My Locator, and My Location, My POTA and My WWFF References. Also API Key for QRZ Upload can be entered here.
 - **Preferences**
+  - Enable Reload last used logbook upon start of MiniBook, (First open logbook before setting this!)
   - Set UTC Offset.
   - Setup Radio CAT control.
   - Setup UDP port QSO Logging (e.g., WSJT-X).
+  - Setup QRZ Callsign Lookup Credentials.
 - **Exit**: Exit MiniBook.
 
 - **Tracking**
   - **Date/Time**: Enable or disable real-time clock updates.
   - **Radio Frequency & Mode**: Enable connection to radio or remote `rigctld`.
 
-- **View**
+- **Window**
   - **Logbook**: Open the logbook viewer.
 
+- **References**
+  - Here you can find shortcuts to several websites when running POTA or WWFF
+    
 - **Help**
-  - **Key Bindings**: Show keyboard shortcuts.
+  - **Update DXCC Lookup File**: Will download the latest DXCC lookup file from github.
   - **About**: View application information.
 
 ### Main Window
@@ -81,6 +89,8 @@ Click “New QSO” to open a form and enter:
 - Comment
 - Heading (Calculated heading from QRZ Lookup Grid and/or Lattitude & Longitude)
 - Satellite (Shows a list of current amateur satellites)
+- WWFF (Enter a received WWFF reference number)
+- POTA (Enter a received Parks On The Air reference number)
 
 ### QSO Edit Window
 To edit a QSO, select the entry and click “Edit”. You can change any field, including:
@@ -89,33 +99,39 @@ To edit a QSO, select the entry and click “Edit”. You can change any field, 
 - Sent / Received Reports
 - Mode / Submode / Band / Frequency
 - Locator / Comment
-- My Callsign, Locator, Location
+- WWFF / POTA
+- My Callsign / My Operator / My Locator / My Location / My POTA / My WWFF
+- Satellite
 
 ## 4. Station Setup
 
 Set the following details to be automatically included in each QSO:
-- **My Callsign**: Your active callsign.
+- **My Callsign**: Your active station callsign.
+- **My Operator**: Enter the operators callsign when using different station callsign
 - **My Locator**: Your Maidenhead grid locator (e.g., FN31pr).
 - **My Location**: Your physical location (e.g., New York, USA).
+- **My WWFF**: Your own WWFF reference number when activating FloraFauna
+- **My POTA**: Your own Parks on the Air reference number when activating POTA
+- **Upload to QRZ**
+  - **QRZ API Key**
+    - Enter your QRZ log upload API key, this key must match My Callsign!
 
 ## 5. Preferences
+- **UTC Offset**
+  - Go to `Preferences > UTC Offset` to configure local-to-UTC conversion.
 
-### UTC Offset
-- Go to `Preferences > UTC Offset` to configure local-to-UTC conversion.
+- **Hamlib Rigctld Setup**
+  - Connect MiniBook to your radio:
+  - **Port**: Default is `4532`.
+  - **Use External Server**: Enter remote IP for `rigctld`.
 
-### Hamlib Rigctld Setup
-Connect MiniBook to your radio:
-- **Port**: Default is `4532`.
-- **Use External Server**: Enter remote IP for `rigctld`.
-
-### QSO Reception Using UDP (WSJT-X)
-Enable MiniBook to receive QSO logs:
-- **Port**: Set a port and match it in WSJT-X/JTDX.
-
-### QRZ Lookup Credentials
-Used to lookup Callsign information on QRZ Lookup, note!, you will need a QRZ subscription for this to work!
-- **Username**
-- **Password**
+- **QSO Reception Using UDP (WSJT-X/JTDX/MSHV etc)**
+  - Enable MiniBook to receive QSO logs:
+  - **Port**: Set a port and match it in WSJT-X/JTDX.
+- **QRZ Lookup Credentials**
+  - Used to lookup Callsign information on QRZ Lookup, note!, you will need a QRZ subscription for this to work!
+  - **Username**
+  - **Password**
 
 ## 6. File Handling
 
