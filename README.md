@@ -40,7 +40,7 @@ The MiniBook Logbook Application is a user-friendly tool designed to manage your
 - **UDP QSO Log Support**: Receive QSO logs from other programs like WSJT-X.
 - **QRZ Lookup Support**: You can now Lookup Callsigns with a QRZ Lookup subscription
 - **QRZ Log upload Support**: You can now upload your logs woth a QRZ API Key
-- **Limited Rig control!**: Entering frequenct in KHz will set radio, also with modes: "USB,LSB,AM,FM,CW,RTTY"
+- **Limited Rig control!**: Entering frequency in KHz will set radio, also with modes: "USB,LSB,AM,FM,CW,RTTY"
 
 ## 3. User Interface Overview
 
