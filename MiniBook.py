@@ -3181,21 +3181,17 @@ def load_last_logbook_on_startup():
     if reload_last and last_logbook and os.path.exists(last_logbook):
         current_json_file = last_logbook
         try:
-            # Ensure log viewer window and tree are initialized
-            if not Logbook_Window or not Logbook_Window.winfo_exists():
-                view_logbook()  # Initialize the log viewer window and tree
-
             # Load the logbook content
             with open(current_json_file, 'r', encoding='utf-8') as file:
                 data = json.load(file)
                 if "Station" in data and "Logbook" in data and isinstance(data["Logbook"], list):
                     update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
-                    load_json_content()  # Populate the log viewer with content
                     load_station_setup()
                     file_menu.entryconfig("Station setup", state="normal")                    
                 else:
                     messagebox.showerror("Invalid Format", "The last logbook file has an invalid structure.")
         except Exception as e:
+            print(f"Error details: {e}")
             messagebox.showerror("Error", f"Could not load the last logbook file: {e}")
     elif reload_last and not os.path.exists(last_logbook):
         messagebox.showwarning("File Not Found", "The last logbook file could not be found.")
