@@ -87,7 +87,9 @@
 #                           - Frequency Input control added, type frequency in KHZ
 #                           - Added "Dupe check of today", callsign will show red on orange when already worked that day.
 #                           - Fix in logbook load function, Clearing old logbook upon cancelation of loading logbook
-#                   1.3.4   - Export Selected records to ADIF added in Logbook Window
+# 13-05-2025    :   1.3.4   - Export Selected records to ADIF added in Logbook Window
+#                           - Added frequency offset control, user now can shift frequecy up and down in khz with - or +, ie +15 is 15khz up
+#                           - log backup function added, when opening logbooks a copy is stored in backup-logs folder with timestamp
 #**********************************************************************************************************************************
 
 from datetime import datetime, timedelta
@@ -103,7 +105,6 @@ import logging
 import os
 import platform
 import re
-import requests
 import requests
 import socket
 import subprocess
@@ -145,6 +146,8 @@ FLAG_IMAGE_HEIGHT   = 50
 # -------- Operating mode options --------
 mode_options        = ["AM", "FM", "USB", "LSB", "SSB", "CW", "CW-R", "DIG", "RTTY", "MFSK", "DYNAMIC", "JT65", "JT8", "FT8", "PSK31", "PSK64", "PSK125", "QPSK31", "PKT","OLIVIA", "SSTV", "VARA","DOMINO"]
 submode_options     = ["","FT4"]
+# Initialize last_passband globally, starting with a default value (e.g., 0 or your choice)
+last_passband = 0
 
 # -------- RST Sent/Received options -------
 rst_options         = [str(i) for i in range(51, 60)] + ["59+10dB", "59+20dB", "59+30dB", "59+40dB"]
@@ -424,6 +427,25 @@ def gui_state_control(status):
         radio_status_var.set("Idle")
 
     update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
+    
+    
+def open_backup_folder():
+    backup_dir = config.get("General", "backup_folder", fallback="").strip()
+    if not backup_dir or not os.path.exists(backup_dir):
+        messagebox.showwarning("Backup Folder Not Set", "No valid backup folder is set in Preferences.")
+        return
+
+    try:
+        # Cross-platform folder open
+        if sys.platform == "win32":
+            os.startfile(backup_dir)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", backup_dir])
+        else:
+            subprocess.Popen(["xdg-open", backup_dir])
+    except Exception as e:
+        messagebox.showerror("Error", f"Could not open the backup folder:\n{e}")
+    
 
 
 #########################################################################################
@@ -524,20 +546,36 @@ def convert_old_logbook(old_logbook):
 
     return new_format
 
-# Function to load an existing JSON file
-def load_json():
-    global current_json_file, Logbook_Window, qso_lines
-    
-    # Check if a JSON file is already loaded
-    if current_json_file:
-        # Ask the user for confirmation
-        confirm = messagebox.askyesno("Confirm", "A file is already loaded. Do you want to load a new file?")
 
+def load_last_logbook_on_startup():
+    # Check if reload is enabled in config
+    reload_enabled = config.getboolean('General', 'reload_last_logbook', fallback=False)
+    if not reload_enabled:
+        return  # User chose not to reload last logbook on startup
+
+    # Proceed if there's a file to load
+    last_file = config.get('General', 'last_loaded_logbook', fallback=None)
+    if last_file and os.path.exists(last_file):
+        load_json(last_file)
+
+
+
+
+
+
+
+
+# Function to load an existing JSON file
+def load_json(file_to_load=None):
+    global current_json_file, Logbook_Window, qso_lines
+
+    # If a file is already loaded and no new one was passed in, confirm with user
+    if current_json_file and not file_to_load:
+        confirm = messagebox.askyesno("Confirm", "A file is already loaded. Do you want to load a new file?")
         if not confirm:
             reset_fields()
-            return  # User chose not to load a new file
+            return
 
-        # Clear current file and related state
         reset_fields()
         clear_station_labels()
         current_json_file = ""
@@ -545,41 +583,88 @@ def load_json():
         workedb4_tree.delete(*workedb4_tree.get_children())
         update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
 
-        # Close the logbook window if it exists
         if Logbook_Window:
-            Logbook_Window.destroy()  # Close the logbook window
-            Logbook_Window = None  # Reset reference
+            Logbook_Window.destroy()
+            Logbook_Window = None
 
-    # Proceed to load a new file
-    current_json_file = filedialog.askopenfilename(filetypes=[("MiniBook files", "*.mbk")])
+    # Use file passed in or ask the user to select one
+    if file_to_load:
+        current_json_file = file_to_load
+    else:
+        current_json_file = filedialog.askopenfilename(filetypes=[("MiniBook files", "*.mbk")])
+
     if current_json_file:
-   
-        # Load the JSON file
+ 
+ 
+        # Create a backup in user-defined folder
+        try:
+            from datetime import datetime
+
+            # Backup folder path check
+            backup_dir = config['General'].get('backup_folder', '').strip()
+
+            if not backup_dir:
+                if messagebox.askokcancel("Backup Folder Not Set", "No backup folder is configured.\nWould you like to open Preferences now to set one?"):
+                    root.after(100, open_preferences)
+            elif not os.path.exists(backup_dir):
+                if messagebox.askokcancel("Backup Folder Missing", f"The configured backup folder does not exist:\n{backup_dir}\n\nOpen Preferences to set or fix it?"):
+                    root.after(100, open_preferences)
+
+
+            os.makedirs(backup_dir, exist_ok=True)
+
+            # Create timestamped backup filename
+            base_name = os.path.basename(current_json_file)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"{timestamp}_{base_name}"
+            backup_path = os.path.join(backup_dir, backup_filename)
+
+            # Write the backup
+            with open(current_json_file, 'r', encoding='utf-8') as original, open(backup_path, 'w', encoding='utf-8') as backup:
+                backup.write(original.read())
+
+            # Limit to 5 backups per unique logbook file
+            MAX_BACKUPS = 5
+            all_backups = [
+                f for f in os.listdir(backup_dir)
+                if f.endswith(base_name) and f.count("_") >= 1
+            ]
+
+            # Sort backups by timestamp (descending)
+            matching_backups = sorted(all_backups, reverse=True)
+
+            for old_file in matching_backups[MAX_BACKUPS:]:
+                try:
+                    os.remove(os.path.join(backup_dir, old_file))
+                except Exception as e:
+                    print(f"Could not remove old backup: {e}")
+
+        except Exception as e:
+            print(f"Backup failed: {e}")
+
+
+
         try:
             with open(current_json_file, 'r', encoding='utf-8') as file:
                 data = json.load(file)
-                
-                # Check if the JSON data is in list format (old format)
+
+                # Handle legacy format (flat list)
                 if isinstance(data, list):
-                    # Ask user if they want to convert the old format
                     convert_confirm = messagebox.askyesno("Convert Old Format", "Old Logbook format detected! Do you want to convert it to the new format?")
                     if convert_confirm:
-                        # Convert the data to the new format
                         data = convert_old_logbook(data)
-                        
-                        # Ask where to save the converted file
                         new_file_path = filedialog.asksaveasfilename(defaultextension=".mbk", filetypes=[("MiniBook files", "*.mbk")])
                         if new_file_path:
                             with open(new_file_path, 'w', encoding='utf-8') as new_file:
                                 json.dump(data, new_file, indent=4)
-                            messagebox.showinfo("Conversion Successful", "The logbook has been converted and saved to the new format.")
+                            messagebox.showinfo("Conversion Successful", "The logbook has been converted and saved.")
                             current_json_file = new_file_path
                             update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
-                            reset_fields()  # Reset fields if needed
+                            reset_fields()
                             load_station_setup()
                             file_menu.entryconfig("Station setup", state="normal")
                         else:
-                            messagebox.showinfo("Save Cancelled", "File was not saved.")
+                            messagebox.showinfo("Save Cancelled", "The converted file was not saved.")
                             current_json_file = ""
                             no_file_loaded()
                     else:
@@ -587,41 +672,41 @@ def load_json():
                         no_file_loaded()
                     return
 
-                # Check if the JSON data is in dictionary format and has the correct structure
+                # Handle modern format with Station and Logbook keys
                 elif isinstance(data, dict):
-                    # Validate the expected structure
                     if "Station" in data and "Logbook" in data and isinstance(data["Logbook"], list):
                         station_info = data["Station"]
-                        if ("Callsign" in station_info and "Locator" in station_info):
-                            # Structure is correct; proceed with loading
+                        if "Callsign" in station_info and "Locator" in station_info:
                             update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
-                            reset_fields()  # Reset fields if needed
+                            reset_fields()
                             load_station_setup()
                             file_menu.entryconfig("Station setup", state="normal")
                         else:
-                            # Incorrect "Station" structure
-                            messagebox.showerror("Invalid Format", "The 'Station' section is missing required fields.")
+                            messagebox.showerror("Invalid Format", "Missing required fields in 'Station' section.")
                             current_json_file = ""
                             no_file_loaded()
                     else:
-                        # Incorrect dictionary structure
-                        messagebox.showerror("Invalid Format", "File is not in the expected format.")
+                        messagebox.showerror("Invalid Format", "The file does not contain a valid logbook structure.")
                         current_json_file = ""
                         no_file_loaded()
 
+                # Save the path to config
                 if current_json_file:
-                    # Save the last loaded file path to config
                     config.set('General', 'last_loaded_logbook', current_json_file)
                     file_path = DATA_FOLDER / CONFIG_FILE
                     with open(file_path, 'w') as configfile:
                         config.write(configfile)
-                
 
         except Exception as e:
             print(f"Error reading MiniBook file: {e}")
-            messagebox.showerror("Error", "Could not read the file. Please ensure it is a valid JSON.")
+            messagebox.showerror("Error", "Could not read the file. Please ensure it is a valid JSON file.")
             current_json_file = ""
             no_file_loaded()
+
+
+
+
+
 
 
 def load_json_content():
@@ -2575,8 +2660,14 @@ def handle_rprtx_error(error_code):
 # Function to update frequency and mode
 stop_frequency_thread = threading.Event()  # Event to stop the thread
 
+
+
+
+
+
+
 def update_frequency_and_mode_thread():
-    global frequency_var, frequency_mhz
+    global frequency_var, frequency_mhz, last_passband
     last_mode = None
 
     while not stop_frequency_thread.is_set():
@@ -2585,49 +2676,51 @@ def update_frequency_and_mode_thread():
             break
 
         try:
-            # Send both commands first
+            # --- Request Frequency ---
             socket_connection.sendall(b"f\n")
-            time.sleep(0.1)  # Give rig a short moment
-            socket_connection.sendall(b"m\n")
-
-            # Read all responses in one go
-            response = socket_connection.recv(1024).decode()
-            lines = response.strip().splitlines()
-
-            #print("[Hamlib] Raw lines:", lines)
-
-            freq_line = next((l for l in lines if l.strip().isdigit() and int(l.strip()) >= 1_000_000), None)
-            mode_line = next((l for l in lines if l.strip().isalpha() or '/' in l), None)
-
-            # --- Frequency ---
-            if freq_line:
-                frequency_mhz = float(freq_line) / 1_000_000
+            freq_resp = socket_connection.recv(64).decode().strip()
+            if freq_resp.isdigit():
+                frequency_hz = int(freq_resp)
+                frequency_mhz = frequency_hz / 1_000_000
                 frequency_var.set(f"{frequency_mhz:.3f}")
             else:
-                print(f"[Hamlib] No valid frequency found in: {lines}")
+                print(f"[Hamlib] Invalid frequency response: {freq_resp}")
 
-            # --- Mode ---
-            if mode_line:
-                known_modes = {
-                    'USB', 'LSB', 'CW', 'CWR', 'RTTY', 'RTTYR', 'AM', 'FM', 'WFM', 'AMS',
-                    'PKTLSB', 'PKTUSB', 'PKTFM', 'ECSSUSB', 'ECSSLSB', 'FA',
-                    'SAM', 'SAL', 'SAH', 'DSB'
-                }
-                filtered_mode = next((m for m in known_modes if mode_line.startswith(m)), mode_line)
+            time.sleep(0.1)
 
-                if filtered_mode != last_mode:
-                    last_mode = filtered_mode
-                    mode_var.set(filtered_mode)
+            # --- Request Mode & Passband ---
+            socket_connection.sendall(b"m\n")
+            response = socket_connection.recv(256).decode().strip()
+            lines = response.splitlines()
+
+            if len(lines) >= 2:
+                mode = lines[0].strip()
+                passband_str = lines[1].strip()
+
+                if mode and mode != last_mode:
+                    mode_var.set(mode)
+                    last_mode = mode
                     on_mode_change()
+
+                try:
+                    pb = int(passband_str)
+                    if pb > 0:  # If passband is valid
+                        if pb != last_passband:  # Only print if passband has changed
+                            last_passband = pb
+                            print(f"[Hamlib] Passband updated to: {last_passband}")
+                except ValueError:
+                    print(f"[Hamlib] Invalid passband: {passband_str}")
             else:
-                print(f"[Hamlib] No valid mode found in: {lines}")
+                print(f"[Hamlib] Incomplete mode/passband response: {lines}")
+
 
         except (socket.error, ValueError) as e:
             print(f"[Hamlib] Communication error: {e}")
             disconnect_from_hamlib()
             break
 
-        time.sleep(0.1)
+        time.sleep(0.5)
+
 
 
 
@@ -2635,38 +2728,112 @@ def update_frequency_and_mode_thread():
 def handle_callsign_or_frequency_entry(event=None):
     value = callsign_var.get().strip().upper()
 
-    valid_modes = {'USB', 'LSB', 'CW', 'CWR', 'RTTY', 'RTTYR', 'AM', 'FM', 'WFM', 'AMS', 'PKTLSB', 'PKTUSB', 'PKTFM', 'ECSSUSB', 'ECSSLSB', 'FA', 'SAM', 'SAL', 'SAH', 'DSB'}
+    valid_modes = {
+        'USB', 'LSB', 'CW', 'CWR', 'RTTY', 'RTTYR', 'AM', 'FM', 'WFM', 'AMS',
+        'PKTLSB', 'PKTUSB', 'PKTFM', 'ECSSUSB', 'ECSSLSB', 'FA',
+        'SAM', 'SAL', 'SAH', 'DSB'
+    }
 
-    # --- Mode input (e.g. USB, FM) ---
+    def refocus():
+        callsign_var.set("")
+        callsign_entry.focus_set()
+
+    # --- + / - KHz steps ---
+    if re.fullmatch(r'[+-]\d{1,5}', value):
+        try:
+            step_khz = int(value)
+            if frequency_mhz is None:
+                print("[Hamlib] No current frequency to adjust from.")
+                return refocus()
+
+            new_freq_mhz = frequency_mhz + (step_khz / 1000.0)
+            new_freq_hz = int(new_freq_mhz * 1_000_000)
+
+            if not (1_000_000 <= new_freq_hz <= 500_000_000):
+                print(f"[Hamlib] Target frequency {new_freq_hz} Hz out of range.")
+                return refocus()
+
+            if socket_connection is None:
+                messagebox.showwarning("Hamlib Not Connected", "No connection to Hamlib. Frequency command not sent.")
+                return refocus()
+
+            socket_connection.sendall(f"F {new_freq_hz}\n".encode())
+            response = ""
+            timeout = time.time() + 1.0
+            while True:
+                chunk = socket_connection.recv(1024).decode()
+                response += chunk
+                if "RPRT 0" in response or time.time() > timeout:
+                    break
+
+            if "RPRT 0" in response:
+                print(f"[Hamlib] Frequency adjusted by {step_khz} kHz to {new_freq_hz} Hz")
+            else:
+                print(f"[Hamlib] Frequency adjustment failed: {response}")
+                handle_rprtx_error(-1)
+
+        except Exception as e:
+            print(f"[Hamlib] Error adjusting frequency: {e}")
+
+        return refocus()
+
+    # --- Mode input ---
     if value in valid_modes:
         if socket_connection is None:
             messagebox.showwarning("Hamlib Not Connected", "No connection to Hamlib. Mode command not sent.")
             print("[Hamlib] No socket connection; mode command skipped.")
-            return
+            return refocus()
+
         try:
-            # Send mode command with default passband (0 = use rig default)
-            socket_connection.sendall(f"M {value} 0\n".encode())
+            # 1. Get current mode and passband
+            socket_connection.sendall(b"+m\n")
+            mode_response = ""
+            timeout = time.time() + 1.0
+            while True:
+                chunk = socket_connection.recv(1024).decode()
+                mode_response += chunk
+                if "RPRT 0" in mode_response or time.time() > timeout:
+                    break
 
-            # Optional: read rig response
-            response = socket_connection.recv(1024).decode().strip()
-            print(f"[Hamlib] Rig response to mode set: '{response}'")
+            current_mode = None
+            current_passband = -1  # use -1 to retain the current passband
 
-            if response.startswith("RPRT") and not response.startswith("RPRT 0"):
-                error_code = int(response.split()[1])
-                handle_rprtx_error(error_code)
-                return
+            for line in mode_response.strip().splitlines():
+                if line.startswith("Mode:"):
+                    current_mode = line.split(":", 1)[1].strip()
+                elif line.startswith("Passband:"):
+                    try:
+                        current_passband = int(line.split(":", 1)[1].strip())
+                    except ValueError:
+                        print(f"[Hamlib] Invalid passband format in: '{line}'")
 
-            print(f"[Hamlib] Mode successfully set to {value}")
-            callsign_var.set("")
-            callsign_entry.focus_set()
-            return
+            # 2. Only change mode if necessary
+            if current_mode != value:
+                command = f"+M {value} {current_passband}\n"
+                socket_connection.sendall(command.encode())
+
+                # 3. Read the response
+                response = ""
+                timeout = time.time() + 1.0
+                while True:
+                    chunk = socket_connection.recv(1024).decode()
+                    response += chunk
+                    if "RPRT 0" in response or time.time() > timeout:
+                        break
+
+                if "RPRT 0" in response:
+                    print(f"[Hamlib] Mode successfully set to {value} with passband {current_passband}")
+                else:
+                    print(f"[Hamlib] Mode set failed, response: {response}")
+                    handle_rprtx_error(-1)
+            else:
+                print(f"[Hamlib] Mode {value} already active; no command sent.")
 
         except socket.error as e:
             print(f"[Hamlib] Socket error during mode set: {e}")
             handle_rprtx_error(-5)
-            callsign_var.set("")
-            callsign_entry.focus_set()
-            return
+
+        return refocus()
 
     # --- Frequency input (e.g. 7000 kHz) ---
     if re.fullmatch(r'\d{4,7}', value):
@@ -2676,37 +2843,41 @@ def handle_callsign_or_frequency_entry(event=None):
             if not (1000 <= frequency_khz <= 500000):
                 print(f"[Input] Rejected: {frequency_khz} kHz is out of valid range.")
                 messagebox.showinfo("Invalid Frequency", f"{frequency_khz} kHz is outside accepted range (1–500000 kHz).")
-                return
+                return refocus()
 
             if socket_connection is None:
                 messagebox.showwarning("Hamlib Not Connected", "No connection to Hamlib. Frequency command not sent.")
                 print("[Hamlib] No socket connection; frequency command skipped.")
-                return
+                return refocus()
 
             frequency_hz = frequency_khz * 1000
             socket_connection.sendall(f"F {frequency_hz}\n".encode())
-            print(f"[Hamlib] Frequency set to {frequency_hz} Hz")
+            response = ""
+            timeout = time.time() + 1.0
+            while True:
+                chunk = socket_connection.recv(1024).decode()
+                response += chunk
+                if "RPRT 0" in response or time.time() > timeout:
+                    break
 
-            callsign_var.set("")
-            callsign_entry.focus_set()
-            return
+            if "RPRT 0" in response:
+                print(f"[Hamlib] Frequency successfully set to {frequency_hz} Hz")
+            else:
+                print(f"[Hamlib] Frequency set failed: {response}")
+                handle_rprtx_error(-1)
 
         except socket.error as e:
             print(f"[Hamlib] Socket error: {e}")
             handle_rprtx_error(-5)
-            callsign_var.set("")
-            callsign_entry.focus_set()
-            return
 
         except ValueError:
             print("[Input] Invalid numeric frequency format.")
-            callsign_var.set("")
-            callsign_entry.focus_set()
-            return
 
-    # --- Non-mode, non-frequency input (e.g. callsigns) ---
+        return refocus()
+
+    # --- Invalid input ---
     print(f"[Input] Ignored: '{value}' is not a valid kHz frequency or supported mode.")
-
+    return refocus()
 
 
 
@@ -3010,6 +3181,10 @@ def open_preferences():
             config['QRZ']['username'] = qrz_username_var.get().strip()
         if qrz_password_var.get().strip():
             config['QRZ']['password'] = qrz_password_var.get().strip()
+            
+        # Save backup folder path
+        if backup_folder_var.get().strip():
+            config['General']['backup_folder'] = backup_folder_var.get().strip()            
 
         
         file_path = DATA_FOLDER / CONFIG_FILE
@@ -3024,7 +3199,25 @@ def open_preferences():
     def cancel_preferences():
         close_window()
 
-    separator = ttk.Separator(Preference_Window, orient='horizontal').grid(row=60, column=0, columnspan=2, sticky='ew', padx=10, pady=5)
+    separator = ttk.Separator(Preference_Window, orient='horizontal').grid(row=54, column=0, columnspan=2, sticky='ew', padx=10, pady=5)
+    
+    # Backup folder section
+    tk.Label(Preference_Window, text="Backup Folder", font=('Arial', 10, 'bold')).grid(row=55, column=0, columnspan="2", padx=10, pady=5)
+
+    backup_folder_var = tk.StringVar(value=config.get("General", "backup_folder", fallback=""))
+
+    tk.Label(Preference_Window, text="Folder:").grid(row=56, column=0, sticky="e", padx=10, pady=1)
+    backup_entry = tk.Entry(Preference_Window, textvariable=backup_folder_var, width=40)
+    backup_entry.grid(row=56, column=1, padx=10, pady=1, sticky='w')
+
+    def choose_backup_folder():
+        folder = filedialog.askdirectory(title="Select Backup Folder")
+        if folder:
+            backup_folder_var.set(folder)
+
+
+    tk.Button(Preference_Window, text="Browse", command=choose_backup_folder).grid(row=56, column=2, padx=5, pady=1, sticky='w')
+    
     
     tk.Button(Preference_Window, text="Save & Exit", command=value_check, width=10, height=2).grid(row=61, column=0, columnspan=2, padx=20, pady=10, sticky="w")
     tk.Button(Preference_Window, text="Cancel", command=cancel_preferences, width=10, height=2).grid(row=61, column=0, columnspan=2, padx=20, pady=10, sticky="e")
@@ -3099,6 +3292,17 @@ def load_config():
     # Save the updated config if any changes were made
     with open(file_path, 'w') as configfile:
         config.write(configfile)
+    '''
+    # Backup folder path check
+    backup_path = config['General'].get('backup_folder', '').strip()
+
+    if not backup_path:
+        if messagebox.askokcancel("Backup Folder Not Set", "No backup folder is configured.\nWould you like to open Preferences now to set one?"):
+            root.after(100, open_preferences)
+    elif not os.path.exists(backup_path):
+        if messagebox.askokcancel("Backup Folder Missing", f"The configured backup folder does not exist:\n{backup_path}\n\nOpen Preferences to set or fix it?"):
+            root.after(100, open_preferences)
+    '''
 
 
 
@@ -3171,30 +3375,6 @@ def save_station_setup():
 
 
 
-def load_last_logbook_on_startup():
-    global current_json_file, Logbook_Window, tree
-
-    # Check if the feature is enabled
-    reload_last = config.getboolean('General', 'reload_last_logbook', fallback=False)
-    last_logbook = config.get('General', 'last_loaded_logbook', fallback="")
-
-    if reload_last and last_logbook and os.path.exists(last_logbook):
-        current_json_file = last_logbook
-        try:
-            # Load the logbook content
-            with open(current_json_file, 'r', encoding='utf-8') as file:
-                data = json.load(file)
-                if "Station" in data and "Logbook" in data and isinstance(data["Logbook"], list):
-                    update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
-                    load_station_setup()
-                    file_menu.entryconfig("Station setup", state="normal")                    
-                else:
-                    messagebox.showerror("Invalid Format", "The last logbook file has an invalid structure.")
-        except Exception as e:
-            print(f"Error details: {e}")
-            messagebox.showerror("Error", f"Could not load the last logbook file: {e}")
-    elif reload_last and not os.path.exists(last_logbook):
-        messagebox.showwarning("File Not Found", "The last logbook file could not be found.")
 
 
 
@@ -3813,9 +3993,14 @@ def toggle_freq_mode():
 # Adding Menu to main window
 menu_bar = tk.Menu(root)
 file_menu = tk.Menu(menu_bar, tearoff=0)
+
 # Add checkbox to Preferences menu
 file_menu.add_command(label="New logbook", command=create_new_json)
 file_menu.add_command(label="Load logbook", command=load_json)
+
+file_menu.add_separator()
+file_menu.add_command(label="Open Backup Folder", command=open_backup_folder)
+
 file_menu.add_separator()
 file_menu.add_command(label="Station setup", command=open_station_setup, state='disabled')
 file_menu.add_separator()
@@ -4390,24 +4575,13 @@ tk.Label(dxcc_frame, text="ITU Zone:", font=('Arial', 9), bg=bg_color).grid(row=
 dxcc_itu = tk.Label(dxcc_frame, text="----", font=('Arial', 9, 'bold'), bg=bg_color)
 dxcc_itu.grid(row=1, column=6, columnspan=3, sticky='w')
 
-
 # Kolommen configureren voor responsief gedrag (optioneel)
 dxcc_frame.grid_columnconfigure(0, weight=0)
 dxcc_frame.grid_columnconfigure(2, weight=0, minsize=250)
 
-
-
 # ---------------------
 separator = ttk.Separator(root, orient='horizontal')
 separator.grid(row=Seperator_3_row, column=Seperator_3_col, columnspan=Seperator_3_colspan, sticky='ew', padx=5)#
-
-
-
-
-
-
-
-
 
 # --- Lookup Button ---
 lookup_button = tk.Button(root, text="Lookup\nF2", command=threaded_on_query, bd=3, relief='raised',width=10, height=2, bg='yellow', fg='black', font=('Arial', 10, 'bold'))
@@ -4424,13 +4598,7 @@ wipe_button = tk.Button(root, text="Wipe\nF1", command=reset_fields, bd=3, relie
 wipe_button.grid(row=Wipe_button_row, column=Wipe_button_col, columnspan=Wipe_button_colspan, rowspan=Wipe_button_rowspan, padx=15, pady=0, sticky='w')
 wipe_button.configure(takefocus=False)
 
-
-
-
-
-
 #----------- WORKED BEFORE FRAME ------------
-
 
 workedb4_frame = tk.Frame(workedb4_window, bg=bg_color)
 workedb4_frame.grid(row=workedb4_row, column=0, columnspan=99, sticky="nsew", pady=(0, 0))
