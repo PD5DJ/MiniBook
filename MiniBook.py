@@ -90,6 +90,7 @@
 # 13-05-2025    :   1.3.4   - Export Selected records to ADIF added in Logbook Window
 #                           - Added frequency offset control, user now can shift frequecy up and down in khz with - or +, ie +15 is 15khz up
 #                           - log backup function added, when opening logbooks a copy is stored in backup-logs folder with timestamp
+#                           - Fix QRZ upload record, Operator field was missing
 #**********************************************************************************************************************************
 
 from datetime import datetime, timedelta
@@ -589,27 +590,32 @@ def load_json(file_to_load=None):
 
     # Use file passed in or ask the user to select one
     if file_to_load:
-        current_json_file = file_to_load
+        selected_file = file_to_load
     else:
-        current_json_file = filedialog.askopenfilename(filetypes=[("MiniBook files", "*.mbk")])
+        selected_file = filedialog.askopenfilename(filetypes=[("MiniBook files", "*.mbk")])
+
+    if not selected_file:
+        return  # User cancelled
+
+    # Check if backup folder is configured and exists BEFORE assigning current_json_file
+    backup_dir = config.get("General", "backup_folder", fallback="").strip()
+    if not backup_dir or not os.path.exists(backup_dir):
+        if messagebox.askokcancel(
+            "Backup Folder Not Set",
+            "No valid backup folder is configured.\nWould you like to open Preferences now to set one?"
+        ):
+            root.after(100, open_preferences)
+        return  # Stop loading process entirely
+
+    # Everything is OK — now commit to using this file
+    current_json_file = selected_file
+
 
     if current_json_file:
- 
- 
+  
         # Create a backup in user-defined folder
         try:
             from datetime import datetime
-
-            # Backup folder path check
-            backup_dir = config['General'].get('backup_folder', '').strip()
-
-            if not backup_dir:
-                if messagebox.askokcancel("Backup Folder Not Set", "No backup folder is configured.\nWould you like to open Preferences now to set one?"):
-                    root.after(100, open_preferences)
-            elif not os.path.exists(backup_dir):
-                if messagebox.askokcancel("Backup Folder Missing", f"The configured backup folder does not exist:\n{backup_dir}\n\nOpen Preferences to set or fix it?"):
-                    root.after(100, open_preferences)
-
 
             os.makedirs(backup_dir, exist_ok=True)
 
@@ -2165,6 +2171,7 @@ def build_adif(qso):
     sent = qso.get('Sent', '')
     received = qso.get('Received', '')
     my_callsign = qso.get('My Callsign', '')
+    operator = qso.get('My Operator', '')
     locator = qso.get('Locator', '')
     name = qso.get('Name', '')
     comment = qso.get('Comment', '')
@@ -2180,6 +2187,7 @@ def build_adif(qso):
         f"<RST_SENT:{len(sent)}>{sent}"
         f"<RST_RCVD:{len(received)}>{received}"
         f"<STATION_CALLSIGN:{len(my_callsign)}>{my_callsign}"
+        f"<OPERATOR:{len(operator)}>{operator}"
         f"<GRIDSQUARE:{len(locator)}>{locator}"
         f"<NAME:{len(name)}>{name}"
         f"<COMMENT:{len(comment)}>{comment}"
@@ -3107,15 +3115,40 @@ def open_preferences():
 
     separator = ttk.Separator(Preference_Window, orient='horizontal').grid(row=50, column=0, columnspan=2, sticky='ew', padx=10, pady=5)
 
-    tk.Label(Preference_Window, text="QRZ Lookup Credentials", font=('Arial', 10, 'bold')).grid(row=51, column=0, columnspan="2", padx=10, pady=1)    
+    # --- QRZ Lookup Option ---
+    tk.Label(Preference_Window, text="QRZ Lookup Settings", font=('Arial', 10, 'bold')).grid(row=51, column=0, columnspan="2", padx=10, pady=1)
 
-    tk.Label(Preference_Window, text="Username:").grid(row=52, column=0, sticky="e", padx=10, pady=1)
-    tk.Label(Preference_Window, text="Password:").grid(row=53, column=0, sticky="e", padx=10, pady=1)
+
+    tk.Label(Preference_Window, text="Use QRZ Lookup:").grid(row=52, column=0, sticky="w", padx=10, pady=1)
+
+    use_qrz_lookup_var = tk.BooleanVar(value=config.getboolean("QRZ", "use_qrz_lookup", fallback=True))
+    tk.Checkbutton(
+        Preference_Window,
+        text="",
+        variable=use_qrz_lookup_var,
+    ).grid(row=52, column=1, columnspan=2, padx=10, pady=2, sticky='w')
+
+    tk.Label(Preference_Window, text="Username:").grid(row=53, column=0, sticky="e", padx=10, pady=1)
+    tk.Label(Preference_Window, text="Password:").grid(row=54, column=0, sticky="e", padx=10, pady=1)
+
     qrz_username_var = tk.StringVar(value=config.get("QRZ", "username", fallback=""))
     qrz_password_var = tk.StringVar(value=config.get("QRZ", "password", fallback=""))
 
-    tk.Entry(Preference_Window, textvariable=qrz_username_var).grid(row=52, column=1, padx=10, pady=1, sticky='w')
-    tk.Entry(Preference_Window, textvariable=qrz_password_var, show="*").grid(row=53, column=1, padx=10, pady=1, sticky='w')    
+    qrz_username_entry = tk.Entry(Preference_Window, textvariable=qrz_username_var)
+    qrz_password_entry = tk.Entry(Preference_Window, textvariable=qrz_password_var, show="*")
+
+    qrz_username_entry.grid(row=53, column=1, padx=10, pady=1, sticky='w')
+    qrz_password_entry.grid(row=54, column=1, padx=10, pady=1, sticky='w')
+
+    # Enable/disable function
+    def toggle_qrz_entries(*args):
+        state = 'normal' if use_qrz_lookup_var.get() else 'disabled'
+        qrz_username_entry.config(state=state)
+        qrz_password_entry.config(state=state)
+
+    use_qrz_lookup_var.trace_add("write", toggle_qrz_entries)
+    toggle_qrz_entries()  # Init state
+
 
     # Checks if IP address is valid
     def is_valid_ip(ip):
@@ -3181,6 +3214,9 @@ def open_preferences():
             config['QRZ']['username'] = qrz_username_var.get().strip()
         if qrz_password_var.get().strip():
             config['QRZ']['password'] = qrz_password_var.get().strip()
+        
+        config['QRZ']['use_qrz_lookup'] = str(use_qrz_lookup_var.get())
+            
             
         # Save backup folder path
         if backup_folder_var.get().strip():
@@ -3199,16 +3235,15 @@ def open_preferences():
     def cancel_preferences():
         close_window()
 
-    separator = ttk.Separator(Preference_Window, orient='horizontal').grid(row=54, column=0, columnspan=2, sticky='ew', padx=10, pady=5)
+    separator = ttk.Separator(Preference_Window, orient='horizontal').grid(row=60, column=0, columnspan=2, sticky='ew', padx=10, pady=5)
     
     # Backup folder section
-    tk.Label(Preference_Window, text="Backup Folder", font=('Arial', 10, 'bold')).grid(row=55, column=0, columnspan="2", padx=10, pady=5)
+    tk.Label(Preference_Window, text="Backup Folder", font=('Arial', 10, 'bold')).grid(row=64, column=0, columnspan="2", padx=10, pady=5)
 
     backup_folder_var = tk.StringVar(value=config.get("General", "backup_folder", fallback=""))
 
-    tk.Label(Preference_Window, text="Folder:").grid(row=56, column=0, sticky="e", padx=10, pady=1)
     backup_entry = tk.Entry(Preference_Window, textvariable=backup_folder_var, width=40)
-    backup_entry.grid(row=56, column=1, padx=10, pady=1, sticky='w')
+    backup_entry.grid(row=65, column=1, padx=10, pady=1, sticky='w')
 
     def choose_backup_folder():
         folder = filedialog.askdirectory(title="Select Backup Folder")
@@ -3216,11 +3251,11 @@ def open_preferences():
             backup_folder_var.set(folder)
 
 
-    tk.Button(Preference_Window, text="Browse", command=choose_backup_folder).grid(row=56, column=2, padx=5, pady=1, sticky='w')
+    tk.Button(Preference_Window, text="Browse", command=choose_backup_folder).grid(row=65, column=0, padx=5, pady=1, sticky='e')
     
     
-    tk.Button(Preference_Window, text="Save & Exit", command=value_check, width=10, height=2).grid(row=61, column=0, columnspan=2, padx=20, pady=10, sticky="w")
-    tk.Button(Preference_Window, text="Cancel", command=cancel_preferences, width=10, height=2).grid(row=61, column=0, columnspan=2, padx=20, pady=10, sticky="e")
+    tk.Button(Preference_Window, text="Save & Exit", command=value_check, width=10, height=2).grid(row=70, column=0, columnspan=2, padx=20, pady=10, sticky="w")
+    tk.Button(Preference_Window, text="Cancel", command=cancel_preferences, width=10, height=2).grid(row=70, column=0, columnspan=2, padx=20, pady=10, sticky="e")
 
     Preference_Window.protocol("WM_DELETE_WINDOW", close_window)
 
@@ -3288,7 +3323,12 @@ def load_config():
     if 'username' not in config['QRZ']:
         config['QRZ']['username'] = ''
     if 'password' not in config['QRZ']:
-        config['QRZ']['password'] = ''        
+        config['QRZ']['password'] = ''
+    if 'use_qrz_lookup' not in config['QRZ']:
+        config['QRZ']['use_qrz_lookup'] = 'True'
+
+        
+        
     # Save the updated config if any changes were made
     with open(file_path, 'w') as configfile:
         config.write(configfile)
@@ -3491,8 +3531,22 @@ def threaded_on_query():
     threading.Thread(target=on_query_thread, daemon=True).start()
 
 def on_query_thread():
+  
+    use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=True)
+    if not use_qrz:
+        return  # Lookup is disabled, silently skip
+
     username = config.get("QRZ", "username", fallback="").strip()
     password = config.get("QRZ", "password", fallback="").strip()
+
+    if not username or not password:
+        messagebox.showwarning("Missing Credentials", "QRZ username/password not found in config.ini")
+        return
+        
+    if not username or not password:
+        messagebox.showwarning("Missing Credentials", "QRZ username/password not found in config.ini")
+        return
+    
     callsign = callsign_var.get().strip()
 
     if not username or not password:
@@ -4402,6 +4456,10 @@ time_entry.grid(row=Time_row, column=Time_col, columnspan=Time_colspan, padx=5, 
 time_entry.configure(takefocus=False)
 
 def on_tab_press(event):
+    use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=True)
+    if not use_qrz:
+        return  # QRZ lookup disabled, do nothing
+
     threaded_on_query()
     return None
 
