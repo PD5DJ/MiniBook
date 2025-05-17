@@ -91,9 +91,11 @@
 #                           - Added frequency offset control, user now can shift frequecy up and down in khz with - or +, ie +15 is 15khz up
 #                           - log backup function added, when opening logbooks a copy is stored in backup-logs folder with timestamp
 #                           - Fix QRZ upload record, Operator field was missing
+# 17-05-2025    :   1.3.5   - Added, DX Summit DX Cluster window.
+#                           - Click on spot, will send frequency and mode to logbook and sent to Hamlib
 #**********************************************************************************************************************************
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 from PIL import Image, ImageTk
 from tkcalendar import DateEntry
@@ -116,9 +118,11 @@ import tkinter as tk
 import urllib.parse
 import webbrowser
 import xml.etree.ElementTree as ET
+from dxspotviewer import launch_dx_spot_viewer
 
 
-VERSION_NUMBER = ("v1.3.4")
+
+VERSION_NUMBER = ("v1.3.5")
 
 # Configuration file path
 DATA_FOLDER         = Path.cwd()
@@ -139,6 +143,8 @@ workedb4_window     = None
 dxcc_window         = None
 workedb4_tree       = None
 workedb4_frame      = None
+dxspotviewer_window = None
+
 
 # Flag image sizing
 FLAG_IMAGE_WIDTH    = 50
@@ -178,6 +184,36 @@ def log_upload_result(message):
     """Append a message to the upload log file."""
     logging.info(message)
 
+# Functions used with dxspotview.py
+def get_worked_calls():
+    return {qso.get("Callsign", "").upper() for qso in qso_lines}
+
+def get_worked_calls_today():
+    today_str = date.today().isoformat()
+    return {
+        qso.get("Callsign", "").upper()
+        for qso in qso_lines
+        if qso.get("Date") == today_str
+    }
+
+def open_dxspotviewer():
+    global dxspotviewer_window
+    if dxspotviewer_window is not None and dxspotviewer_window.winfo_exists():
+        dxspotviewer_window.lift()
+        return
+
+    dxspotviewer_window = tk.Toplevel()
+    dxspotviewer_window.resizable(False, False)
+
+    launch_dx_spot_viewer(
+        rigctl_host=hamlib_ip_var.get().strip() or "127.0.0.1",
+        rigctl_port=int(hamlib_port_var.get()) if str(hamlib_port_var.get()).isdigit() else 4532,
+        tracking_var=freqmode_tracking_var,
+        on_callsign_selected=handle_callsign_from_spot,
+        get_worked_calls=get_worked_calls,
+        get_worked_calls_today=get_worked_calls_today,
+        parent_window=dxspotviewer_window  # 👈 dit is nieuw
+    )
 
 
 
@@ -404,14 +440,14 @@ def load_satellite_names(filename=SAT_FILE):
 # 12 = disconnected
 # 20 = noradio
 def gui_state_control(status):
-    global radio_status_var, external_server_ip, server_port_var
+    global radio_status_var, hamlib_ip_var, hamlib_port_var
 
 
     if status == 10:
         radio_status_var.set("Connecting...")
 
     elif status == 11:
-        radio_status_var.set(f"Connected to {external_server_ip.get()}:{server_port_var.get()}")
+        radio_status_var.set(f"Connected to {hamlib_ip_var.get()}:{hamlib_port_var.get()}")
 
         freq_entry.config(fg="red", state='readonly')
         band_combobox.config(state='disabled')        
@@ -2132,6 +2168,9 @@ def log_qso():
             json.dump(json_data, file, ensure_ascii=False, indent=4)
             file.truncate()  # Ensure no old data remains in the file
 
+            # Updates QSO Lines with new record
+            qso_lines.append(qso_entry)
+
             # Reset input fields and update last QSO label
             reset_fields()
             last_qso_label.config(text=f"Last QSO with {callsign} at {time} on {float(frequency):.3f}MHz in {mode}")
@@ -2449,6 +2488,8 @@ def add_qso_to_logbook(qso_entry):
             file.seek(0)
             json.dump(json_data, file, ensure_ascii=False, indent=4)
             file.truncate()
+            
+            qso_lines.append(qso_entry)
 
             # Update the last QSO label
             last_qso_label.config(text=f"Last QSO with {qso_entry['Callsign']} at {qso_entry['Time']} on {float(qso_entry['Frequency']):.3f}MHz in {qso_entry['Mode']}")
@@ -2571,7 +2612,7 @@ def connect_to_hamlib():
 
     try:
         # Use External Server
-        server_ip = external_server_ip.get()
+        server_ip = hamlib_ip_var.get()
         server_port = int(hamlib_PORT)
         print(f"Connect to external hamlib-server at {server_ip}:{server_port}...")
 
@@ -2594,7 +2635,7 @@ def connect_to_hamlib():
 def establish_socket_connection():
     global socket_connection
     try:
-        server_ip = external_server_ip.get()
+        server_ip = hamlib_ip_var.get()
         server_port = int(hamlib_PORT)
         print(f"Connect to external hamlib-server at {server_ip}:{server_port}...")
         socket_connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -3024,7 +3065,7 @@ def open_station_setup():
 
 # Function for Preference menu
 def open_preferences():
-    global Preference_Window, utc_offset_var, external_server_ip, server_port_var
+    global Preference_Window, utc_offset_var, hamlib_ip_var, hamlib_port_var
 
     # Check if the window is already open
     if Preference_Window is not None and Preference_Window.winfo_exists():
@@ -3055,8 +3096,8 @@ def open_preferences():
     Preference_Window.geometry(f"+{x}+{y}")     
 
     # Load saved radio settings
-    server_port_var     = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_port', fallback=4532))
-    external_server_ip  = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_ip', fallback="127.0.0.1"))
+    hamlib_port_var     = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_port', fallback=4532))
+    hamlib_ip_var       = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_ip', fallback="127.0.0.1"))
     wsjtx_port          = config.get('Wsjtx_settings', 'wsjtx_port', fallback="2333")
 
 
@@ -3090,16 +3131,16 @@ def open_preferences():
 
     # hamlib Server port
     tk.Label(Preference_Window, text="Port:").grid(row=7, column=0, padx=10, pady=1, sticky='w')
-    server_port_var = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_port', fallback=4532))
+    hamlib_port_var = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_port', fallback=4532))
     server_port_frame = tk.Frame(Preference_Window)
     for value in ["4532", "4536", "4538", "4540"]:
-        tk.Radiobutton(server_port_frame, text=value, variable=server_port_var, value=value).pack(side=tk.LEFT)
+        tk.Radiobutton(server_port_frame, text=value, variable=hamlib_port_var, value=value).pack(side=tk.LEFT)
     server_port_frame.grid(row=7, column=1, padx=10, pady=1, sticky='w')
             
 
    # Remote hamlib server settings
     tk.Label(Preference_Window, text="IP-address:").grid(row=9, column=0, sticky="w", padx=10, pady=1)
-    ip_entry = tk.Entry(Preference_Window, textvariable=external_server_ip)
+    ip_entry = tk.Entry(Preference_Window, textvariable=hamlib_ip_var)
     ip_entry.grid(row=9, column=1, padx=10, pady=1, sticky="w")
     ip_entry.configure(state="normal")
 
@@ -3178,10 +3219,10 @@ def open_preferences():
             return
         
         # Check if the IP is valid
-        if is_valid_ip(external_server_ip.get()):
+        if is_valid_ip(hamlib_ip_var.get()):
             pass  # Valid IP, proceed to save preferences
         else:
-            messagebox.showerror("Error", f"{external_server_ip.get()} is an invalid IP address.")
+            messagebox.showerror("Error", f"{hamlib_ip_var.get()} is an invalid IP address.")
             return
         
         save_preferences() # If both are valid, save preferences
@@ -3203,8 +3244,8 @@ def open_preferences():
                 # Ensure the setting is reset if no logbook is loaded
                 config['General']['reload_last_logbook'] = "False"
         config['Global_settings']['utc_offset'] = utc_offset_var.get()
-        config['hamlib_settings']['hamlib_port'] = server_port_var.get()
-        config['hamlib_settings']['hamlib_ip'] = external_server_ip.get()
+        config['hamlib_settings']['hamlib_port'] = hamlib_port_var.get()
+        config['hamlib_settings']['hamlib_ip'] = hamlib_ip_var.get()
         config["Wsjtx_settings"]['wsjtx_port'] = str(wsjtx_port_var.get())
 
         # Save QRZ credentials in same structure
@@ -3657,7 +3698,7 @@ def show_about():
 
 # Function called beginning at start of program
 def init():
-    global external_server_ip, server_port_var, prefixes
+    global hamlib_ip_var, hamlib_port_var, prefixes
 
     # Creating & loading of config.ini
     load_config()
@@ -3669,8 +3710,8 @@ def init():
     gui_state_control(12) # Shows disconnected Hamlib status
     update_datetime()
     utc_offset_var.set(config.get('Global_settings', 'utc_offset', fallback='0'))
-    external_server_ip  = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_ip', fallback="127.0.0.1"))
-    server_port_var     = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_port', fallback=4532))
+    hamlib_ip_var  = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_ip', fallback="127.0.0.1"))
+    hamlib_port_var     = tk.StringVar(value=config.get('hamlib_settings', 'hamlib_port', fallback=4532))
     callsign_entry.focus_set() # Set focus to the callsign entry field
     load_last_logbook_on_startup()
 
@@ -4073,6 +4114,9 @@ tracking_menu.add_checkbutton(label="Radio Frequency & Mode", variable=freqmode_
 
 view_menu = tk.Menu(menu_bar, tearoff=0)
 view_menu.add_command(label="Logbook", command=view_logbook)
+
+view_menu.add_command(label="DX Cluster Viewer", command=open_dxspotviewer)
+
 menu_bar.add_cascade(label="Window", menu=view_menu)
 
 # --- Reference Menu ---
@@ -4153,6 +4197,23 @@ def set_focus_color(event):
 def reset_focus_color(event):
     event.widget.configure(background="white")
 
+
+def handle_callsign_from_spot(callsign, freq=None, mode=None):
+    callsign_var.set(callsign)
+    callsign_entry.focus_set()
+    callsign_entry.icursor(tk.END)
+
+    # If frequency tracking is not active then update frequency and mode entries
+    if not freqmode_tracking_var.get():
+        if freq:
+            frequency_var.set(freq)
+
+        if mode and mode in mode_combobox['values']:
+            mode_var.set(mode)
+
+    use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=True)
+    if use_qrz:
+        threaded_on_query()
 
 
 
@@ -4714,6 +4775,15 @@ root.bind("<F1>", invoke_reset_fields)
 def invoke_lookup_button(event=None):
     lookup_button.invoke()
 root.bind("<F2>", invoke_lookup_button)
+
+
+def on_minibook_exit():
+    global dxspotviewer_window
+    if dxspotviewer_window and dxspotviewer_window.winfo_exists():
+        dxspotviewer_window.destroy()
+    root.destroy()
+
+root.protocol("WM_DELETE_WINDOW", on_minibook_exit)
 
 
 # Call init function to Preset / Preload  variables / Tasks
