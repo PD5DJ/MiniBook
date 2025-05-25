@@ -93,6 +93,8 @@
 #                           - Fix QRZ upload record, Operator field was missing
 # 17-05-2025    :   1.3.5   - Added, DX Summit DX Cluster window.
 #                           - Click on spot, will send frequency and mode to logbook and sent to Hamlib
+# 21-05-2025    :   1.3.6   - Bulkedit added when selecting multiple records.
+#                           - Duplicate QSO finder added
 #**********************************************************************************************************************************
 
 from datetime import datetime, timedelta, date
@@ -122,7 +124,7 @@ from dxspotviewer import launch_dx_spot_viewer
 
 
 
-VERSION_NUMBER = ("v1.3.5")
+VERSION_NUMBER = ("v1.3.6")
 
 # Configuration file path
 DATA_FOLDER         = Path.cwd()
@@ -237,10 +239,14 @@ def no_file_loaded():
     my_callsign_var.set("")
     my_operator_var.set("")
     my_location_var.set("")
-    my_callsign_label.config(textvariable=my_callsign_var)
-    my_operator_label.config(textvariable=my_operator_var)
-    my_locator_label.config(textvariable=my_locator_var)
-    my_location_label.config(textvariable=my_location_var)
+
+    my_callsign_entry.config(textvariable=my_callsign_var)
+    my_operator_entry.config(textvariable=my_operator_var)
+    my_locator_entry.config(textvariable=my_locator_var)
+    my_location_entry.config(textvariable=my_location_var)
+    my_wwff_entry.config(textvariable=my_wwff_var)
+    my_pota_entry.config(textvariable=my_pota_var)
+
     file_menu.entryconfig("Station setup", state="disabled")
 
 
@@ -251,20 +257,19 @@ def reset_fields():
     QRZ_status_label.config(text="")
     pota_var.set("")
     wwff_var.set("")
-    my_wwff_label.config(text="")
     callsign_var.set("")
     name_var.set("")
     city_var.set("")
     zipcode_var.set("")
     address_var.set("")
     qsl_info_var.set("")
+    satellite_var.set("")
+    submode_var.set("")
     heading_var.set("")
-    on_mode_change()  # 
+    on_mode_change() 
     locator_var.set("")    
-    callsign_entry.focus_set() # Set focus to the callsign entry field
-    heading_entry.config(state='normal')
-    heading_entry.delete(0, tk.END)
-    heading_entry.config(state='readonly')            
+    callsign_entry.focus_set()
+
 
 
 # Function to clear My Station Parameters in GUI
@@ -388,25 +393,25 @@ band_ranges = {
 # Mapping from band to default frequency
 band_to_frequency = {
     "2200m": "0.1356",
-    "160m": "1.850",
-    "80m": "3.650",
-    "60m": "5.360",
-    "40m": "7.000",
-    "30m": "10.100",
-    "20m": "14.000",
-    "17m": "18.100",
-    "15m": "21.000",
-    "12m": "24.890",
-    "11m": "27.000",
-    "10m": "28.000",
-    "6m": "50.000",
-    "4m": "70.000",
-    "2m": "144.000",
-	"1.25m": "220.000",
-    "70cm": "430.000",
-	"33cm": "902.000",
-    "23cm": "1296.000",
-    "13cm": "2300.000"
+    "160m": "1.8500",
+    "80m": "3.6500",
+    "60m": "5.3600",
+    "40m": "7.0000",
+    "30m": "10.1000",
+    "20m": "14.0000",
+    "17m": "18.1000",
+    "15m": "21.0000",
+    "12m": "24.8900",
+    "11m": "27.0000",
+    "10m": "28.0000",
+    "6m": "50.0000",
+    "4m": "70.0000",
+    "2m": "144.0000",
+	"1.25m": "220.0000",
+    "70cm": "430.0000",
+	"33cm": "902.0000",
+    "23cm": "1296.0000",
+    "13cm": "2300.0000"
 }
 
 
@@ -900,8 +905,8 @@ def view_logbook():
     # ---------------- Frame for search entry and button ----------------
     search_frame = tk.Frame(Logbook_Window)
     search_frame.pack(pady=2)
-    
-    # Label for search entry
+
+     # Label for search entry
     search_label = tk.Label(search_frame, text="Search in log:", font=('Arial', 10))
     search_label.pack(pady=5, side='left')
 
@@ -974,7 +979,14 @@ def view_logbook():
             else:
                 context_menu.entryconfig("Edit QSO", state="disabled")
 
+            # Alleen "Bulk Edit" tonen als 2 of meer regels geselecteerd zijn
+            if len(selected_items) >= 2:
+                context_menu.entryconfig("Bulk Edit", state="normal")
+            else:
+                context_menu.entryconfig("Bulk Edit", state="disabled")
+
             context_menu.post(event.x_root, event.y_root)
+
 
 
 
@@ -1170,6 +1182,7 @@ def view_logbook():
     # Create a context menu
     context_menu = tk.Menu(Logbook_Window, tearoff=0)
     context_menu.add_command(label="Edit QSO", command=edit_qso_from_menu)
+    context_menu.add_command(label="Bulk Edit", command=open_bulk_edit_window)
     context_menu.add_command(label="Delete QSO('s)", command=delete_qso_from_menu)
     context_menu.add_command(label="Upload to QRZ", command=upload_qsos_to_qrz)
     context_menu.add_command(label="Export to ADIF (selected)", command=export_selected_to_adif)
@@ -1246,6 +1259,8 @@ def view_logbook():
 
 
 
+
+
 #   ┬  ┌─┐┌─┐  ┌─┐┌─┐┌─┐┬─┐┌─┐┬ ┬
 #   │  │ ││ ┬  └─┐├┤ ├─┤├┬┘│  ├─┤
 #   ┴─┘└─┘└─┘  └─┘└─┘┴ ┴┴└─└─┘┴ ┴
@@ -1308,6 +1323,9 @@ def view_logbook():
     search_button = tk.Button(search_frame, text="Search", command=search_log)
     search_button.pack(pady=5, side='left')
 
+    find_duplicates_btn = tk.Button(search_frame,  text="Find Duplicates", command=find_duplicates)
+    find_duplicates_btn.pack(side='left', padx=10)
+
     def close_logbook():
         global tree, Logbook_Window
         tree = None  # Reset tree to ensure it is treated as uninitialized
@@ -1327,6 +1345,7 @@ def view_logbook():
     # Add a button to close the logbook window
     tk.Button(search_frame, text="Close Window", command=close_logbook).pack(pady=5, padx=30, side="right")    
 
+
     # Function to update the logbook when new QSO is logged
     def update_logbook():
         load_json_content()
@@ -1338,6 +1357,218 @@ def view_logbook():
     
     # Set the Logbook_Window to None when it is closed
     Logbook_Window.protocol("WM_DELETE_WINDOW", close_logbook)
+
+
+
+
+def find_duplicates():
+    if not qso_lines:
+        messagebox.showinfo("Duplicates", "No logbook loaded or empty.")
+        return
+
+    seen = {}
+    duplicate_index_map = {}
+
+    for idx, qso in enumerate(qso_lines):
+        key = (
+            qso.get("Callsign", "").strip().upper(),
+            qso.get("Date", "").strip(),
+            qso.get("Time", "").strip()
+        )
+        if key in seen:
+            if key not in duplicate_index_map:
+                duplicate_index_map[key] = [seen[key]]
+            duplicate_index_map[key].append(idx)
+        else:
+            seen[key] = idx
+
+    all_duplicate_indices = []
+    for indices in duplicate_index_map.values():
+        all_duplicate_indices.extend(indices)
+
+    if not all_duplicate_indices:
+        messagebox.showinfo("Duplicates", "No duplicate QSOs found.")
+        return
+
+    dup_window = tk.Toplevel(Logbook_Window)
+    dup_window.title("Duplicate QSOs Found")
+
+    tree_dup = ttk.Treeview(dup_window, columns=("Index", "Callsign", "Date", "Time", "Mode", "Frequency"), show="headings", selectmode="extended")
+    tree_dup.heading("Index", text="Index")
+    tree_dup.heading("Callsign", text="Callsign")
+    tree_dup.heading("Date", text="Date")
+    tree_dup.heading("Time", text="Time")
+    tree_dup.heading("Mode", text="Mode")
+    tree_dup.heading("Frequency", text="Frequency")
+
+    # Kolommen en headers centreren
+    for col in ("Index", "Callsign", "Date", "Time", "Mode", "Frequency"):
+        tree_dup.column(col, anchor="center")
+        tree_dup.heading(col, text=col, anchor="center")
+
+    tree_dup.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    tree_to_log_index = {}
+    color_styles = ["lightblue", "white", "lightgreen", "lightyellow", "lightpink", "lavender", "lightgray"]
+
+    for i, color in enumerate(color_styles):
+        tag_name = f"tag_{i}"
+        tree_dup.tag_configure(tag_name, background=color)
+        
+
+    for group_index, (key, indices) in enumerate(duplicate_index_map.items()):
+        tag_name = f"tag_{group_index % len(color_styles)}"
+        for idx in indices:
+            qso = qso_lines[idx]
+            iid = f"dup_{idx}"
+            tree_dup.insert(
+                "", "end", iid=iid,
+                values=(idx, qso.get("Callsign"), qso.get("Date"), qso.get("Time"), qso.get("Mode"), qso.get("Frequency")),
+                tags=(tag_name,)
+            )
+            tree_to_log_index[iid] = idx
+
+    def delete_selected_duplicates():
+        selected_iids = tree_dup.selection()  # <-- correcte Treeview gebruiken
+        if not selected_iids:
+            messagebox.showwarning("No Selection", "Select records to delete.")
+            return
+        if not messagebox.askyesno("Confirm Delete", f"Delete {len(selected_iids)} selected duplicates?"):
+            return
+        indices_to_delete = sorted([tree_to_log_index[iid] for iid in selected_iids], reverse=True)
+        for i in indices_to_delete:
+            try:
+                del qso_lines[i]
+            except IndexError:
+                continue
+        save_to_json()
+        load_json_content()
+        dup_window.destroy()
+        messagebox.showinfo("Done", f"{len(indices_to_delete)} duplicates removed and saved.")
+
+
+
+    tk.Button(dup_window, text="Delete Selected", command=delete_selected_duplicates).pack(pady=5)
+    tk.Button(dup_window, text="Close", command=dup_window.destroy).pack(pady=5)
+
+
+
+
+
+
+
+def open_bulk_edit_window():
+    selected_items = tree.selection()
+    if not selected_items:
+        messagebox.showinfo("No Selection", "Select one or more QSO records first.")
+        return
+
+    edit_window = tk.Toplevel(Logbook_Window)
+    edit_window.title("Bulk Edit")
+
+    Logbook_Window.update_idletasks()
+    logbook_x = Logbook_Window.winfo_rootx()
+    logbook_y = Logbook_Window.winfo_rooty()
+    logbook_w = Logbook_Window.winfo_width()
+    logbook_h = Logbook_Window.winfo_height()
+
+    win_w = 350
+    win_h = 160
+    pos_x = logbook_x + (logbook_w // 2) - (win_w // 2)
+    pos_y = logbook_y + (logbook_h // 2) - (win_h // 2)
+
+    edit_window.geometry(f"{win_w}x{win_h}+{pos_x}+{pos_y}")
+
+    edit_window.resizable(False, False)
+    edit_window.transient(Logbook_Window)
+    edit_window.grab_set()
+
+    tk.Label(edit_window, text="Field to edit:").pack(pady=5)
+    field_var = tk.StringVar()
+    field_combo = ttk.Combobox(edit_window, textvariable=field_var, state="readonly")
+    field_combo['values'] = list(tree["columns"])
+    field_combo.pack(pady=5)
+
+    tk.Label(edit_window, text="New value:").pack(pady=5)
+    value_entry = tk.Entry(edit_window)
+    value_entry.pack(pady=5)
+
+    # Velden waarvoor automatisch uppercase moet gelden
+    uppercase_fields = [
+        "Callsign", "Locator", "My Callsign", "My Operator", "My Locator",
+        "My WWFF", "My POTA", "Continent", "Mode", "Submode", "WWFF", "POTA"
+    ]
+
+    def apply_bulk_edit():
+        field = field_var.get()
+        new_value = value_entry.get().strip()
+
+        if not field:
+            messagebox.showwarning("Missing Field", "Please select a field.")
+            return
+
+        # Validatie
+        if field.lower() == "locator" and not is_valid_locator(new_value):
+            messagebox.showerror("Invalid Locator", "Locator must be valid and at least 4 characters.\nExample: FN31 or JN58TD.")
+            return
+        if field.lower() == "date":
+            try:
+                datetime.strptime(new_value, "%Y-%m-%d")
+            except ValueError:
+                messagebox.showerror("Invalid Date", "Date must be in format YYYY-MM-DD.")
+                return
+        if field.lower() == "time":
+            try:
+                datetime.strptime(new_value, "%H:%M")
+            except ValueError:
+                messagebox.showerror("Invalid Time", "Time must be in format HH:MM.")
+                return
+
+        # Uppercase waar nodig
+        if field in uppercase_fields:
+            new_value = new_value.upper()
+
+        confirm = messagebox.askyesno("Confirm Bulk Edit", f"Apply value '{new_value}' to field '{field}' for {len(selected_items)} QSO(s)?")
+        if not confirm:
+            return
+
+        updated_count = 0
+        for item in selected_items:
+            values = list(tree.item(item, "values"))
+            col_index = tree["columns"].index(field)
+            values[col_index] = new_value
+            tree.item(item, values=values)
+
+            # Update qso_lines
+            for qso in qso_lines:
+                if (
+                    str(qso.get("Date", "")).strip(),
+                    str(qso.get("Time", "")).strip(),
+                    str(qso.get("Callsign", "")).strip().upper()
+                ) == (
+                    str(values[0]).strip(),
+                    str(values[1]).strip(),
+                    str(values[2]).strip().upper()
+                ):
+                    qso[field] = new_value
+                    updated_count += 1
+                    break
+
+        save_to_json()
+        load_json_content()
+        update_worked_before_tree()
+        edit_window.destroy()
+        messagebox.showinfo("Success", f"{updated_count} QSO(s) updated.")
+
+    # Knoppen
+    btn_frame = tk.Frame(edit_window)
+    btn_frame.pack(pady=10)
+    tk.Button(btn_frame, text="Cancel", command=edit_window.destroy, width=10).pack(side="left", padx=10)
+    tk.Button(btn_frame, text="Save", command=apply_bulk_edit, width=10).pack(side="right", padx=10)
+
+
+
+
 
 
 
@@ -2252,7 +2483,8 @@ def upload_to_qrz(qso, showstatus):
         response = requests.post("https://logbook.qrz.com/api", data=post_data)
         if response.status_code == 200:
             if "RESULT=OK" in response.text:
-                msg = "✅ QSO successfully uploaded to QRZ."
+                msg = f"✅ QSO {qso.get('CALL', '') or qso.get('Callsign', '')} successfully uploaded to QRZ."
+
                 color = "green"
             elif "RESULT=FAIL" in response.text:
                 reason = response.text.split("REASON=")[-1].split("&")[0]
@@ -2731,7 +2963,7 @@ def update_frequency_and_mode_thread():
             if freq_resp.isdigit():
                 frequency_hz = int(freq_resp)
                 frequency_mhz = frequency_hz / 1_000_000
-                frequency_var.set(f"{frequency_mhz:.3f}")
+                frequency_var.set(f"{frequency_mhz:.4f}")
             else:
                 print(f"[Hamlib] Invalid frequency response: {freq_resp}")
 
@@ -2803,7 +3035,6 @@ def handle_callsign_or_frequency_entry(event=None):
                 return refocus()
 
             if socket_connection is None:
-                messagebox.showwarning("Hamlib Not Connected", "No connection to Hamlib. Frequency command not sent.")
                 return refocus()
 
             socket_connection.sendall(f"F {new_freq_hz}\n".encode())
@@ -2829,7 +3060,6 @@ def handle_callsign_or_frequency_entry(event=None):
     # --- Mode input ---
     if value in valid_modes:
         if socket_connection is None:
-            messagebox.showwarning("Hamlib Not Connected", "No connection to Hamlib. Mode command not sent.")
             print("[Hamlib] No socket connection; mode command skipped.")
             return refocus()
 
@@ -2891,11 +3121,9 @@ def handle_callsign_or_frequency_entry(event=None):
 
             if not (1000 <= frequency_khz <= 500000):
                 print(f"[Input] Rejected: {frequency_khz} kHz is out of valid range.")
-                messagebox.showinfo("Invalid Frequency", f"{frequency_khz} kHz is outside accepted range (1–500000 kHz).")
                 return refocus()
 
             if socket_connection is None:
-                messagebox.showwarning("Hamlib Not Connected", "No connection to Hamlib. Frequency command not sent.")
                 print("[Hamlib] No socket connection; frequency command skipped.")
                 return refocus()
 
@@ -3159,10 +3387,9 @@ def open_preferences():
     # --- QRZ Lookup Option ---
     tk.Label(Preference_Window, text="QRZ Lookup Settings", font=('Arial', 10, 'bold')).grid(row=51, column=0, columnspan="2", padx=10, pady=1)
 
-
     tk.Label(Preference_Window, text="Use QRZ Lookup:").grid(row=52, column=0, sticky="w", padx=10, pady=1)
 
-    use_qrz_lookup_var = tk.BooleanVar(value=config.getboolean("QRZ", "use_qrz_lookup", fallback=True))
+    use_qrz_lookup_var = tk.BooleanVar(value=config.getboolean("QRZ", "use_qrz_lookup", fallback=False))
     tk.Checkbutton(
         Preference_Window,
         text="",
@@ -3366,24 +3593,14 @@ def load_config():
     if 'password' not in config['QRZ']:
         config['QRZ']['password'] = ''
     if 'use_qrz_lookup' not in config['QRZ']:
-        config['QRZ']['use_qrz_lookup'] = 'True'
+        config['QRZ']['use_qrz_lookup'] = 'False'
 
         
         
     # Save the updated config if any changes were made
     with open(file_path, 'w') as configfile:
         config.write(configfile)
-    '''
-    # Backup folder path check
-    backup_path = config['General'].get('backup_folder', '').strip()
 
-    if not backup_path:
-        if messagebox.askokcancel("Backup Folder Not Set", "No backup folder is configured.\nWould you like to open Preferences now to set one?"):
-            root.after(100, open_preferences)
-    elif not os.path.exists(backup_path):
-        if messagebox.askokcancel("Backup Folder Missing", f"The configured backup folder does not exist:\n{backup_path}\n\nOpen Preferences to set or fix it?"):
-            root.after(100, open_preferences)
-    '''
 
 
 
@@ -3405,8 +3622,16 @@ def load_station_setup():
                 my_qrzapi_var.set(station_info.get("QRZAPI", ""))
                 upload_qrz_var.set(bool(station_info.get("QRZUpload", False)))
 
+                my_callsign_entry.config(textvariable=my_callsign_var)
+                my_operator_entry.config(textvariable=my_operator_var)
+                my_locator_entry.config(textvariable=my_locator_var)
+                my_location_entry.config(textvariable=my_location_var)
+                my_wwff_entry.config(textvariable=my_wwff_var)
+                my_pota_entry.config(textvariable=my_pota_var)
 
 
+
+                '''
                 # Displays on root window in status bar
                 my_operator_label.config(textvariable=my_operator_var)
                 my_callsign_label.config(textvariable=my_callsign_var)
@@ -3414,7 +3639,7 @@ def load_station_setup():
                 my_location_label.config(textvariable=my_location_var)
                 my_wwff_label.config(textvariable=my_wwff_var)
                 my_pota_label.config(textvariable=my_pota_var)
-                
+                '''             
 
         except (json.JSONDecodeError, KeyError) as e:
             messagebox.showerror("Error", f"Failed to load station details from logbook: {e}")
@@ -3475,6 +3700,7 @@ def save_station_setup():
 ##
 #########################################################################################
 
+
 def locator_to_latlon(locator):
     if len(locator) < 4:
         raise ValueError("Locator must be at least 4 characters.")
@@ -3501,97 +3727,84 @@ def get_session_key(username, password):
 
     try:
         response = requests.get(url, timeout=5)
-        print("Login XML:\n", response.text)
-    except requests.exceptions.RequestException:
-        print("⚠️ No internet connection")
-        return None, None
+        root_xml = ET.fromstring(response.content)
+        ns = {"qrz": "http://xmldata.qrz.com"}
 
-    root = ET.fromstring(response.content)
-    ns = {"qrz": "http://xmldata.qrz.com"}
+        key = root_xml.findtext(".//qrz:Key", namespaces=ns)
+        error = root_xml.findtext(".//qrz:Error", namespaces=ns)
+        return key, error
 
-    key = root.findtext(".//qrz:Key", namespaces=ns)
-    if not key:
-        key_element = root.find(".//{http://xmldata.qrz.com}Key")
-        if key_element is not None:
-            key = key_element.text
+    except requests.exceptions.RequestException as e:
+        print("QRZ login failed:", e)
+        return None, "❌ Connection QRZ XML Failed"
 
-    error = root.findtext(".//qrz:Error", namespaces=ns)
-    return key, error
+
 
 def query_callsign(session_key, callsign):
     def do_query(cs):
         url = f"https://xmldata.qrz.com/xml/current/?s={session_key}&callsign={cs}"
         try:
             response = requests.get(url, timeout=5)
-            print(f"Raw XML for {cs}:\n", response.text)
-        except requests.exceptions.RequestException:
-            return {}
-        root = ET.fromstring(response.content)
-        ns = {"qrz": "http://xmldata.qrz.com"}
-        return root.find(".//qrz:Callsign", ns)
+            root = ET.fromstring(response.content)
+            ns = {"qrz": "http://xmldata.qrz.com"}
+            return root.find(".//qrz:Callsign", ns)
+        except Exception as e:
+            print(f"Error fetching QRZ XML for {cs}:", e)
+            return None
 
     callsign_element = do_query(callsign)
 
-    # If lookup fails, try without prefix/suffix
-    if callsign_element is None and ("/" in callsign):
+    if callsign_element is None and "/" in callsign:
         parts = callsign.split("/")
         if len(parts) == 2:
             base_callsign = parts[1] if len(parts[1]) >= len(parts[0]) else parts[0]
-            print(f"🔁 Falling back to base callsign: {base_callsign}")
             callsign_element = do_query(base_callsign)
 
-    if callsign_element is None:
-        print("⚠️ No Callsign element found in XML!")
-        return {}
-
     ns = {"qrz": "http://xmldata.qrz.com"}
+
+    if callsign_element is None:
+        QRZ_status_label.config(text="⚠️ No Callsign found in QRZ XML.", fg="red")
+        return None
+
+    found_call = callsign_element.findtext("qrz:call", default="Unknown", namespaces=ns)
+    QRZ_status_label.config(text=f"🔍 Found {found_call} in QRZ lookup.", fg="blue")
+
     lat = callsign_element.findtext("qrz:lat", default="", namespaces=ns)
     lon = callsign_element.findtext("qrz:lon", default="", namespaces=ns)
     maps_link = f"https://www.google.com/maps?q={lat},{lon}" if lat and lon else ""
 
-    data = {
-        "callsign": callsign_element.findtext("qrz:call", default="", namespaces=ns),
-        "name": f"{callsign_element.findtext('qrz:fname', default='', namespaces=ns)} {callsign_element.findtext('qrz:name', default='', namespaces=ns)}".strip(),
-        "address": callsign_element.findtext("qrz:addr1", default="", namespaces=ns),
-        "city": callsign_element.findtext("qrz:addr2", default="", namespaces=ns),
-        "zipcode": callsign_element.findtext("qrz:zip", default="", namespaces=ns),
-        "province": callsign_element.findtext("qrz:state", default="", namespaces=ns),
-        "country": callsign_element.findtext("qrz:country", default="", namespaces=ns),
-        "email": callsign_element.findtext("qrz:email", default="", namespaces=ns),
-        "grid": callsign_element.findtext("qrz:grid", default="", namespaces=ns),
-        "cq_zone": callsign_element.findtext("qrz:cqzone", default="", namespaces=ns),
-        "itu_zone": callsign_element.findtext("qrz:ituzone", default="", namespaces=ns),
-        "qslmgr": callsign_element.findtext("qrz:qslmgr", default="", namespaces=ns),
+    return {
+        "callsign": found_call,
+        "name": f"{callsign_element.findtext('qrz:fname', '', ns)} {callsign_element.findtext('qrz:name', '', ns)}".strip(),
+        "address": callsign_element.findtext("qrz:addr1", "", ns),
+        "city": callsign_element.findtext("qrz:addr2", "", ns),
+        "zipcode": callsign_element.findtext("qrz:zip", "", ns),
+        "province": callsign_element.findtext("qrz:state", "", ns),
+        "country": callsign_element.findtext("qrz:country", "", ns),
+        "email": callsign_element.findtext("qrz:email", "", ns),
+        "grid": callsign_element.findtext("qrz:grid", "", ns),
+        "cq_zone": callsign_element.findtext("qrz:cqzone", "", ns),
+        "itu_zone": callsign_element.findtext("qrz:ituzone", "", ns),
+        "qslmgr": callsign_element.findtext("qrz:qslmgr", "", ns),
         "lat": lat,
         "lon": lon,
         "mapslink": maps_link,
     }
-    return data
 
 def threaded_on_query():
     threading.Thread(target=on_query_thread, daemon=True).start()
 
 def on_query_thread():
-  
-    use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=True)
+    use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=False)
     if not use_qrz:
-        return  # Lookup is disabled, silently skip
+        return
 
     username = config.get("QRZ", "username", fallback="").strip()
     password = config.get("QRZ", "password", fallback="").strip()
-
-    if not username or not password:
-        messagebox.showwarning("Missing Credentials", "QRZ username/password not found in config.ini")
-        return
-        
-    if not username or not password:
-        messagebox.showwarning("Missing Credentials", "QRZ username/password not found in config.ini")
-        return
-    
     callsign = callsign_var.get().strip()
 
     if not username or not password:
-        root.after(0, lambda: messagebox.showerror("Missing Credentials", "QRZ username/password not found in config.ini"))
+        root.after(0, lambda: messagebox.showwarning("Missing Credentials", "QRZ username/password not found in config.ini"))
         return
 
     if not callsign:
@@ -3602,14 +3815,19 @@ def on_query_thread():
     if not session_key:
         if error:
             def show_error():
-                if "Invalid" in error or "incorrect" in error.lower() or "not authorized" in error.lower():
+                QRZ_status_label.config(text=error, fg="red")
+                if any(w in error.lower() for w in ["invalid", "incorrect", "not authorized"]):
                     messagebox.showerror("QRZ Login Failed", "Username or password incorrect.")
+                elif "connection" in error.lower():
+                    messagebox.showerror("Connection Error", "Unable to reach QRZ XML server.")
                 else:
-                    messagebox.showerror("Connection Error", error)
+                    messagebox.showerror("QRZ Error", error)
             root.after(0, show_error)
         return
 
     data = query_callsign(session_key, callsign)
+    if data is None:
+        return  # already handled
 
     def update_gui():
         locator_var.set(data.get("grid", ""))
@@ -3621,12 +3839,10 @@ def on_query_thread():
 
         try:
             my_lat, my_lon = locator_to_latlon(my_locator_var.get())
-            target_lat, target_lon = None, None
+            target_lat = float(data["lat"]) if data.get("lat") else None
+            target_lon = float(data["lon"]) if data.get("lon") else None
 
-            if data.get("lat") and data.get("lon"):
-                target_lat = float(data["lat"])
-                target_lon = float(data["lon"])
-            elif data.get("grid"):
+            if target_lat is None or target_lon is None and data.get("grid"):
                 target_lat, target_lon = locator_to_latlon(data["grid"])
 
             if target_lat is not None and target_lon is not None:
@@ -3640,7 +3856,6 @@ def on_query_thread():
             heading_var.set("")
 
     root.after(0, update_gui)
-
 
 
 
@@ -3660,7 +3875,7 @@ def show_about():
     About_Window.geometry("300x400")
 
     # Center the About_Window relative to root
-    About_Window.update_idletasks()  # Zorg dat afmetingen bekend zijn
+    About_Window.update_idletasks()
     w = About_Window.winfo_width()
 
     root_x = root.winfo_x()
@@ -3668,7 +3883,7 @@ def show_about():
     root_w = root.winfo_width()
 
     x = root_x + (root_w // 2) - (w // 2)
-    y = root_y  # zelfde top als root
+    y = root_y
 
     About_Window.geometry(f"+{x}+{y}") 
 
@@ -3949,10 +4164,6 @@ def update_worked_before_tree(*args):
         tag = "oddrow" if row_color else "evenrow"
         row_color = not row_color
 
-        qso_band = qso.get("Band", "").strip()
-        qso_mode = qso.get("Mode", "").strip().upper()
-        qso_date = qso.get("Date", "").strip()
-
         # Check for duplicate (same day, band, mode)
         if (normalize_callsign(qso.get("Callsign", "")) == normalize_callsign(entered_call) and
             qso.get("Date", "").strip() == today and
@@ -4020,6 +4231,7 @@ address_var = tk.StringVar()
 qsl_info_var = tk.StringVar()
 heading_var = tk.StringVar()
 locator_var = tk.StringVar()
+locator_var.trace("w", lambda *args: locator_var.set(locator_var.get().upper()))
 my_locator_var = tk.StringVar()
 my_location_var = tk.StringVar()
 my_callsign_var = tk.StringVar()
@@ -4047,7 +4259,7 @@ datetime_tracking_enabled = tk.BooleanVar(value=True)  # Enabled by default
 freqmode_tracking_var = tk.BooleanVar(value=False)
 qrz_username_var = tk.StringVar()
 qrz_password_var = tk.StringVar()
-upload_qrz_var = tk.BooleanVar()
+upload_qrz_var = tk.BooleanVar(value=False)
 
 # Preparation of hamlib in Threaded mode
 hamlib_process = None
@@ -4125,6 +4337,7 @@ reference_menu.add_command(label="DX Summit", command=lambda: webbrowser.open("h
 reference_menu.add_separator()
 reference_menu.add_command(label="POTA Activations", command=lambda: webbrowser.open("https://pota.app/#/"))
 reference_menu.add_command(label="POTA Map", command=lambda: webbrowser.open("https://pota.app/#/map"))
+reference_menu.add_command(label="POTA List", command=lambda: webbrowser.open("https://pota.app/#/parklist"))
 reference_menu.add_separator()
 reference_menu.add_command(label="WWFF Agenda", command=lambda: webbrowser.open("https://wwff.co/agenda/"))
 reference_menu.add_command(label="WWFF Dutch Map", command=lambda: webbrowser.open("https://www.google.com/maps/d/u/0/view?hl=en&mid=1yXBN79NWlsI-wrZaDfyeXA2zg129nEU&ll=52.12186480765635%2C5.251994000000018&z=8"))
@@ -4211,310 +4424,10 @@ def handle_callsign_from_spot(callsign, freq=None, mode=None):
         if mode and mode in mode_combobox['values']:
             mode_var.set(mode)
 
-    use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=True)
+    use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=False)
     if use_qrz:
         threaded_on_query()
 
-
-
-
-# Set the width for columns 0 and 1
-root.grid_columnconfigure(0, weight=0, minsize=50)
-root.grid_columnconfigure(1, weight=0, minsize=50)
-root.grid_columnconfigure(2, weight=0, minsize=50)
-root.grid_columnconfigure(3, weight=0, minsize=50)
-root.grid_columnconfigure(4, weight=0, minsize=50)
-root.grid_columnconfigure(5, weight=0, minsize=50)
-root.grid_columnconfigure(6, weight=0, minsize=50)
-
-
-#------------- Field/Label positions Row/Column/Span --------------
-
-System_info_frame_row          = 0
-System_info_frame_col          = 0
-System_info_frame_colspan      = 10
-
-Seperator_0_row                = 1
-Seperator_0_col                = 0
-Seperator_0_colspan            = 7
-
-#--------------------------------------
-
-My_info_frame_row              = 2
-My_info_frame_col              = 0
-My_info_frame_colspan          = 10
-
-Seperator_1_row                = 3
-Seperator_1_col                = 0
-Seperator_1_colspan            = 7
-
-#--------------------------------------
-
-
-Date_header_row                = 4
-Date_header_col                = 0
-Date_header_colspan            = 1
-Date_row                       = 4
-Date_col                       = 1
-Date_colspan                   = 1
-
-Time_header_row                = 4
-Time_header_col                = 2
-Time_header_colspan            = 1
-Time_row                       = 4
-Time_col                       = 3
-Time_colspan                   = 1
-
-Callsign_header_row            = 5
-Callsign_header_col            = 0
-Callsign_header_colspan        = 1
-Callsign_row                   = 5
-Callsign_col                   = 1
-Callsign_colspan               = 1
-
-RST_sent_header_row            = 5
-RST_sent_header_col            = 2
-RST_sent_header_colspan        = 1
-RST_sent_row                   = 5
-RST_sent_col                   = 3
-RST_sent_colspan               = 1
-
-RST_rcvd_header_row            = 5
-RST_rcvd_header_col            = 3
-RST_rcvd_header_colspan        = 1
-RST_rcvd_row                   = 5
-RST_rcvd_col                   = 4
-RST_rcvd_colspan               = 1
-
-Locator_header_row             = 6
-Locator_header_col             = 0
-Locator_header_colspan         = 1
-Locator_row                    = 6
-Locator_col                    = 1
-Locator_colspan                = 1
-
-Mode_header_row                = 6
-Mode_header_col                = 2
-Mode_header_colspan            = 1
-Mode_row                       = 6
-Mode_col                       = 3
-Mode_colspan                   = 1
-
-Submode_header_row             = 6
-Submode_header_col             = 3
-Submode_header_colspan         = 1
-Submode_row                    = 6
-Submode_col                    = 4
-Submode_colspan                = 1
-
-Band_header_row                = 7
-Band_header_col                = 0
-Band_header_colspan            = 1
-Band_row                       = 7
-Band_col                       = 1
-Band_colspan                   = 1
-
-Freq_header_row                = 7
-Freq_header_col                = 2
-Freq_header_colspan            = 1
-Freq_row                       = 7
-Freq_col                       = 3
-Freq_colspan                   = 1
-
-Satellite_header_row           = 7
-Satellite_header_col           = 3
-Satellite_header_colspan       = 1
-Satellite_row                  = 7
-Satellite_col                  = 4
-Satellite_colspan              = 1
-
-Name_header_row                = 8
-Name_header_col                = 0
-Name_header_colspan            = 1
-Name_row                       = 8
-Name_col                       = 1
-Name_colspan                   = 1
-
-Comment_header_row             = 8
-Comment_header_col             = 2
-Comment_header_colspan         = 1
-Comment_row                    = 8
-Comment_col                    = 3
-Comment_colspan                = 3
-
-WWFF_header_row                 = 9
-WWFF_header_col                 = 0
-WWFF_header_colspan             = 1
-WWFF_row                        = 9
-WWFF_col                        = 1
-WWFF_colspan                    = 1
-
-POTA_header_row                 = 9
-POTA_header_col                 = 2
-POTA_header_colspan             = 1
-POTA_row                        = 9
-POTA_col                        = 3
-POTA_colspan                    = 1
-
-Seperator_5_row                = 10
-Seperator_5_col                = 0
-Seperator_5_colspan            = 6
-
-QRZ_text_row                   = 11
-QRZ_text_col                   = 0
-QRZ_text_colspan               = 2
-
-QSL_info_header_row             = 11
-QSL_info_header_col             = 2
-QSL_info_header_colspan         = 1
-QSL_info_row                    = 11
-QSL_info_col                    = 3
-QSL_info_colspan                = 4
-
-Address_header_row             = 12  
-Address_header_col             = 0
-Address_header_colspan         = 1
-Address_row                    = 12
-Address_col                    = 1
-Address_colspan                = 3
-
-Heading_header_row             = 12
-Heading_header_col             = 4
-Heading_header_rowspan         = 2
-Heading_entry_row              = 12
-Heading_entry_col              = 5
-Heading_entry_colspan          = 2
-Heading_entry_rowspan          = 2
-
-City_header_row                = 13
-City_header_col                = 0
-City_header_colspan            = 1
-City_row                       = 13
-City_col                       = 1
-City_colspan                   = 1
-
-Zipcode_header_row             = 13
-Zipcode_header_col             = 2
-Zipcode_header_colspan         = 1
-Zipcode_row                    = 13
-Zipcode_col                    = 3
-Zipcode_colspan                = 1
-
-
-
-Seperator_2_row                = 14
-Seperator_2_col                = 0
-Seperator_2_colspan            = 7
-
-#--------------------------------------
-DXCC_frame_row                 = 16
-DXCC_frame_col                 = 0
-DXCC_frame_colspan             = 99
-
-
-Wipe_button_row                = 4
-Wipe_button_col                = 6
-Wipe_button_colspan            = 1
-Wipe_button_rowspan            = 2
-
-Lookup_button_row              = 6
-Lookup_button_col              = 6
-Lookup_button_colspan          = 1
-Lookup_button_rowspan          = 2
-
-Log_button_row                 = 8
-Log_button_col                 = 6
-Log_button_colspan             = 1
-Log_button_rowspan             = 3
-
-#--------------------------------------
-
-Seperator_3_row                = 30
-Seperator_3_col                = 0
-Seperator_3_colspan            = 7
-
-workedb4_row                   = 40
-
-Last_qso_row                   = 50
-Last_qso_col                   = 0
-Last_qso_colspan               = 3
-
-QRZ_status_header_row          = 50
-QRZ_status_header_col          = 0
-QRZ_status_header_colspan      = 9
-QRZ_status_header_rowspan      = 1
-
-y_padding                      = 2
-
-bg_color = root.cget("bg")
-
-
-
-# MY INFO FRAME
-my_info_frame = tk.Frame(root, bg="lightgrey")
-my_info_frame.grid(row=My_info_frame_row, column=My_info_frame_col, columnspan=My_info_frame_colspan, sticky='ew', padx=5, pady=2)
-
-# Configure columns to stretch and control alignment
-my_info_frame.columnconfigure(0, weight=1)  # left
-my_info_frame.columnconfigure(1, weight=1)  # center
-my_info_frame.columnconfigure(2, weight=1)  # right
-
-# (My Callsign)
-callsign_frame = tk.Frame(my_info_frame, bg="lightgrey")
-callsign_frame.grid(row=0, column=0, padx=5, sticky='w')
-tk.Label(callsign_frame, text="Callsign:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
-my_callsign_label = tk.Label(callsign_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
-my_callsign_label.pack(side='left')
-
-# (My Operator)
-operator_frame = tk.Frame(my_info_frame, bg="lightgrey")
-operator_frame.grid(row=0, column=1, padx=5, sticky='w')
-tk.Label(operator_frame, text="Operator:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
-my_operator_label = tk.Label(operator_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
-my_operator_label.pack(side='left')
-
-# (My Locator)
-locator_frame = tk.Frame(my_info_frame, bg="lightgrey")
-locator_frame.grid(row=0, column=2, padx=5)
-tk.Label(locator_frame, text="Locator:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
-my_locator_label = tk.Label(locator_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
-my_locator_label.pack(side='left')
-
-# (My Location)
-location_frame = tk.Frame(my_info_frame, bg="lightgrey")
-location_frame.grid(row=1, column=0, padx=5, sticky='w')
-tk.Label(location_frame, text="Location:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
-my_location_label = tk.Label(location_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
-my_location_label.pack(side='left')
-
-# (My WWFF)
-my_wwff_frame = tk.Frame(my_info_frame, bg="lightgrey")
-my_wwff_frame.grid(row=1, column=1, padx=5, sticky='w')  # Positioned under My Callsign
-tk.Label(my_wwff_frame, text="WWFF:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
-my_wwff_label = tk.Label(my_wwff_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
-my_wwff_label.pack(side='left')
-
-# (My POTA)
-my_pota_frame = tk.Frame(my_info_frame, bg="lightgrey")
-my_pota_frame.grid(row=1, column=2, padx=5)  # Positioned under My Locator
-tk.Label(my_pota_frame, text="POTA:", font=('Arial', 10), bg="lightgrey").pack(side='left', padx=(0, 3))
-my_pota_label = tk.Label(my_pota_frame, font=('Arial', 10, 'bold'), bg="lightgrey")
-my_pota_label.pack(side='left')
-# ---------------------
-separator = ttk.Separator(root, orient='horizontal')
-separator.grid(row=Seperator_1_row, column=Seperator_1_col, columnspan=Seperator_1_colspan, sticky='ew', padx=5, pady=0)
-
-# DATE
-tk.Label(root, text="QSO Date:", font=('Arial', 10)).grid(row=Date_header_row, column=Date_header_col, columnspan=Date_header_colspan, padx=5, pady=y_padding, sticky='e')
-date_entry = DateEntry(root, textvariable=date_var, date_pattern='yyyy-mm-dd', font=('Arial', 10, 'bold'))
-date_entry.grid(row=Date_row, column=Date_col, columnspan=Date_colspan, padx=5, pady=y_padding, sticky='w')
-date_entry.configure(takefocus=False)
-
-# TIME
-tk.Label(root, text="QSO Time:", font=('Arial', 10)).grid(row=Time_header_row, column=Time_header_col, columnspan=Time_header_colspan, padx=5, pady=y_padding, sticky='e')
-time_entry = tk.Entry(root, textvariable=time_var, font=('Arial', 10, 'bold'), width=10)
-time_entry.grid(row=Time_row, column=Time_col, columnspan=Time_colspan, padx=5, pady=y_padding, sticky='w')
-time_entry.configure(takefocus=False)
 
 def on_tab_press(event):
     use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=True)
@@ -4524,206 +4437,324 @@ def on_tab_press(event):
     threaded_on_query()
     return None
 
+
+
+
+
+#------------- Field/Label positions Row/Column/Span --------------
+
+
+My_Info_Frame_row       = 0
+QSO_DateTime_Frame_row  = 1
+MainEntry_Frame_row     = 2
+WWFFPOTA_Frame_row      = 4
+QRZ_Info_Frame_row      = 6
+DXCC_Frame_row          = 5
+Workedb4_Frame_row      = 7
+Button_Frame_row        = 8
+Status_Frame_row        = 9
+
+
+
+Internal_Y_Padding      = 2
+Frame_Y_Padding         = 0
+bg_color = root.cget("bg")
+
+style = ttk.Style()
+combobox_font = ('Arial', 12, 'bold')
+style.configure("Custom.TCombobox", font=combobox_font)
+root.option_add('*TCombobox*Listbox.font', combobox_font)
+
+
+
+
+
+
+# MY INFO FRAME
+my_info_frame = tk.Frame(root, bd=2, relief='groove', pady=Internal_Y_Padding, bg='lightgrey')
+my_info_frame.grid(row=My_Info_Frame_row, column=0, columnspan=7, sticky='ew', padx=5, pady=Frame_Y_Padding)
+
+for i in range(6):
+    my_info_frame.grid_columnconfigure(i, weight=1)
+
+tk.Label(my_info_frame, text="Callsign:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=0, sticky='e', padx=5)
+my_callsign_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+my_callsign_entry.grid(row=0, column=1, sticky='w', padx=5)
+
+tk.Label(my_info_frame, text="Operator:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=2, sticky='e', padx=5)
+my_operator_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+my_operator_entry.grid(row=0, column=3, sticky='w', padx=5)
+
+tk.Label(my_info_frame, text="Locator:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=4, sticky='e', padx=5)
+my_locator_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+my_locator_entry.grid(row=0, column=5, sticky='w', padx=5)
+
+tk.Label(my_info_frame, text="Location:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=0, sticky='e', padx=5)
+my_location_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+my_location_entry.grid(row=1, column=1, sticky='w', padx=5)
+
+tk.Label(my_info_frame, text="WWFF:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=2, sticky='e', padx=5)
+my_wwff_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+my_wwff_entry.grid(row=1, column=3, sticky='w', padx=5)
+
+tk.Label(my_info_frame, text="POTA:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=4, sticky='e', padx=5)
+my_pota_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+my_pota_entry.grid(row=1, column=5, sticky='w', padx=5)
+
+
+
+
+
+
+
+
+DateTime_frame = tk.Frame(root, bd=2, relief='groove', pady=Internal_Y_Padding)
+DateTime_frame.grid(row=QSO_DateTime_Frame_row, column=0, columnspan=7, sticky="ew", padx=5, pady=Frame_Y_Padding)
+
+
+shared_column_widths = [80, 80 , 80, 80, 80, 80, 80]
+for i, width in enumerate(shared_column_widths):
+    DateTime_frame.grid_columnconfigure(i, weight=0, minsize=width)
+
+# DATE
+tk.Label(DateTime_frame, text="QSO Date:", font=('Arial', 10)).grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='e')
+date_entry = DateEntry(DateTime_frame, textvariable=date_var, date_pattern='yyyy-mm-dd', font=('Arial', 10, 'bold'))
+date_entry.grid(row=0, column=2, padx=5, pady=Internal_Y_Padding, sticky='w')
+date_entry.configure(takefocus=False)
+
+# TIME
+tk.Label(DateTime_frame, text="QSO Time:", font=('Arial', 10)).grid(row=0, column=4, padx=5, pady=Internal_Y_Padding, sticky='e')
+time_entry = tk.Entry(DateTime_frame, textvariable=time_var, font=('Arial', 10, 'bold'), width=10)
+time_entry.grid(row=0, column=5, padx=5, pady=Internal_Y_Padding, sticky='w')
+time_entry.configure(takefocus=False)
+
+
+
+
+
+MainEntry_frame = tk.Frame(root, bd=2, relief='groove', pady=Internal_Y_Padding)
+MainEntry_frame.grid(row=MainEntry_Frame_row, column=0, columnspan=6, sticky='ew', padx=5, pady=Frame_Y_Padding)
+
+shared_column_widths = [70, 100, 50, 80, 50, 80]
+for i, width in enumerate(shared_column_widths):
+    MainEntry_frame.grid_columnconfigure(i, weight=0, minsize=width)
+
 # CALLSIGN
-tk.Label(root, text="Callsign:", font=('Arial', 10)).grid(row=Callsign_header_row, column=Callsign_header_col, columnspan=Callsign_header_colspan, padx=5, pady=y_padding, sticky='e')
-callsign_entry = tk.Entry(root, textvariable=callsign_var, font=('Arial', 10, 'bold'))
-callsign_entry.grid(row=Callsign_row, column=Callsign_col, columnspan=Callsign_colspan, padx=5, pady=y_padding, sticky='w')
+tk.Label(MainEntry_frame, text="Callsign:", font=('Arial', 10)).grid(row=0, column=0, padx=5, sticky='e')
+callsign_entry = tk.Entry(MainEntry_frame, textvariable=callsign_var, font=('Arial', 14, 'bold'), width=14)
+callsign_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 callsign_entry.bind("<Return>", handle_callsign_or_frequency_entry)
 callsign_entry.bind("<Tab>", on_tab_press)
 callsign_entry.bind("<FocusIn>", set_focus_color)
 callsign_entry.bind("<FocusOut>", reset_focus_color)
 
 # SENT
-tk.Label(root, text="Sent:", font=('Arial', 10)).grid(row=RST_sent_header_row, column=RST_sent_header_col, columnspan=RST_sent_header_colspan, padx=5, pady=y_padding, sticky='e')
-rst_sent_combobox = ttk.Combobox(root, textvariable=rst_sent_var, values=rst_options, font=('Arial', 10, 'bold'), width=8)
-rst_sent_combobox.grid(row=RST_sent_row, column=RST_sent_col, columnspan=RST_sent_colspan, padx=5, pady=y_padding, sticky='w')
+tk.Label(MainEntry_frame, text="Sent:", font=('Arial', 10)).grid(row=0, column=2, padx=5, sticky='e')
+rst_sent_combobox = ttk.Combobox(MainEntry_frame, textvariable=rst_sent_var, values=rst_options, font=('Arial', 14, 'bold'), width=8, style="Custom.TCombobox")
+rst_sent_combobox.grid(row=0, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
 
 # RECEIVED
-tk.Label(root, text="Received:", font=('Arial', 10)).grid(row=RST_rcvd_header_row, column=RST_rcvd_header_col, columnspan=RST_rcvd_header_colspan,  padx=5, pady=y_padding, sticky='e')
-rst_received_combobox = ttk.Combobox(root, textvariable=rst_received_var, values=rst_options, font=('Arial', 10, 'bold'), width=8)
-rst_received_combobox.grid(row=RST_rcvd_row, column=RST_rcvd_col, columnspan=RST_rcvd_colspan, padx=5, pady=y_padding, sticky='w')
+tk.Label(MainEntry_frame, text="Received:", font=('Arial', 10)).grid(row=0, column=4, padx=5, sticky='e')
+rst_received_combobox = ttk.Combobox(MainEntry_frame, textvariable=rst_received_var, values=rst_options, font=('Arial', 14, 'bold'), width=8, style="Custom.TCombobox")
+rst_received_combobox.grid(row=0, column=5, padx=5, pady=Internal_Y_Padding, sticky='w')
 
 # LOCATOR
-tk.Label(root, text="Locator:", font=('Arial', 10)).grid(row=Locator_header_row, column=Locator_header_col, columnspan=Locator_header_colspan,  padx=5, pady=y_padding, sticky='e')
-locator_entry = tk.Entry(root, textvariable=locator_var, font=('Arial', 10, 'bold'))
-locator_entry.grid(row=Locator_row, column=Locator_col, columnspan=Locator_colspan, padx=5, pady=y_padding, sticky='w')
+tk.Label(MainEntry_frame, text="Locator:", font=('Arial', 10)).grid(row=1, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+locator_entry = tk.Entry(MainEntry_frame, textvariable=locator_var, font=('Arial', 14, 'bold'), width=12)
+locator_entry.grid(row=1, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 locator_entry.bind("<FocusIn>", set_focus_color)
 locator_entry.bind("<FocusOut>", reset_focus_color)
 
 # MODE
-tk.Label(root, text="Mode:", font=('Arial', 10)).grid(row=Mode_header_row, column=Mode_header_col, columnspan=Mode_header_colspan,  padx=5, pady=y_padding, sticky='e')
-mode_combobox = ttk.Combobox(root, textvariable=mode_var, values=mode_options, font=('Arial', 10, 'bold'), width=8, state='readonly')
-mode_combobox.grid(row=Mode_row, column=Mode_col, columnspan=Mode_colspan, padx=5, pady=y_padding, sticky='w')
+tk.Label(MainEntry_frame, text="Mode:", font=('Arial', 10)).grid(row=1, column=2, padx=5, pady=Internal_Y_Padding, sticky='e')
+mode_combobox = ttk.Combobox(MainEntry_frame, textvariable=mode_var, values=mode_options, font=('Arial', 14, 'bold'), width=8, state='readonly', style="Custom.TCombobox")
+mode_combobox.grid(row=1, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
 mode_combobox.bind("<<ComboboxSelected>>", on_mode_change)
-    
+
 # SUBMODE
-tk.Label(root, text="Submode:", font=('Arial', 10)).grid(row=Submode_header_row, column=Submode_header_col, columnspan=Submode_header_colspan,  padx=5, pady=y_padding, sticky='e')
-submode_combobox = ttk.Combobox(root, textvariable=submode_var, values=submode_options, font=('Arial', 10, 'bold'), width=8, state='readonly')
-submode_combobox.grid(row=Submode_row, column=Submode_col, columnspan=Submode_colspan, padx=5, pady=y_padding, sticky='w')
+tk.Label(MainEntry_frame, text="Submode:", font=('Arial', 10)).grid(row=1, column=4, padx=5, pady=Internal_Y_Padding, sticky='e')
+submode_combobox = ttk.Combobox(MainEntry_frame, textvariable=submode_var, values=submode_options, font=('Arial', 14, 'bold'), width=8, state='readonly', style="Custom.TCombobox")
+submode_combobox.grid(row=1, column=5, padx=5, pady=Internal_Y_Padding, sticky='w')
 submode_combobox.configure(takefocus=False)
 
 # BAND
-tk.Label(root, text="Band:", font=('Arial', 10)).grid(row=Band_header_row, column=Band_header_col, columnspan=Band_header_colspan, padx=5, pady=y_padding, sticky='e')
-band_combobox = ttk.Combobox(root, width=8, textvariable=band_var, values=list(band_to_frequency.keys()), font=('Arial', 10, 'bold'), state='readonly')
-band_combobox.grid(row=Band_row, column=Band_col, columnspan=Band_colspan, padx=5, pady=y_padding, sticky='w')
-band_combobox.bind("<<ComboboxSelected>>", update_frequency_from_band) # Bind band change to update frequency
+tk.Label(MainEntry_frame, text="Band:", font=('Arial', 10)).grid(row=2, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+band_combobox = ttk.Combobox(MainEntry_frame, width=8, textvariable=band_var, values=list(band_to_frequency.keys()), font=('Arial', 14, 'bold'), state='readonly')
+band_combobox.grid(row=2, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+band_combobox.bind("<<ComboboxSelected>>", update_frequency_from_band)
 
 # FREQUENCY
-tk.Label(root, text="Freq (MHz):", font=('Arial', 10)).grid(row=Freq_header_row, column=Freq_header_col, columnspan=Freq_header_colspan, padx=5, pady=y_padding, sticky='e')
-freq_entry = tk.Entry(root, textvariable=frequency_var, font=('Arial', 10, 'bold'), width=10)
-freq_entry.grid(row=Freq_row, column=Freq_col, columnspan=Freq_colspan, padx=5, pady=y_padding, sticky='w')
-freq_entry.bind("<FocusIn>", on_focus)      # Set cursor ready for direct edit by selecting all text on focus
+tk.Label(MainEntry_frame, text="Freq (MHz):", font=('Arial', 10)).grid(row=2, column=2, padx=5, pady=Internal_Y_Padding, sticky='e')
+freq_entry = tk.Entry(MainEntry_frame, textvariable=frequency_var, font=('Arial', 14, 'bold'), width=10)
+freq_entry.grid(row=2, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
+freq_entry.bind("<FocusIn>", on_focus)
 freq_entry.bind("<FocusIn>", set_focus_color)
 freq_entry.bind("<FocusOut>", reset_focus_color)
-freq_entry.bind("<KeyPress>", on_keypress)  # Bind keypress to allow numbers and one decimal point
-frequency_var.trace("w", update_band_from_frequency) # Bind frequency input to update the band if the frequency is outside the selected band
+freq_entry.bind("<KeyPress>", on_keypress)
+frequency_var.trace("w", update_band_from_frequency)
 
-
-# SATELLITE pulldown
-tk.Label(root, text="Satellite:", font=('Arial', 10)).grid(row=Satellite_header_row, column=Satellite_header_col, columnspan=Satellite_header_colspan, padx=5, pady=y_padding, sticky='e')
-satellite_list = load_satellite_names() # Load list of sattelites
+# SATELLITE
+tk.Label(MainEntry_frame, text="Satellite:", font=('Arial', 10)).grid(row=2, column=4, padx=5, pady=Internal_Y_Padding, sticky='e')
+satellite_list = load_satellite_names()
 satellite_list.insert(0, "")
 satellite_var = tk.StringVar()
-satellite_dropdown = ttk.Combobox(root, textvariable=satellite_var, values=satellite_list, font=('Arial', 10, 'bold'), width=8, state="readonly")
-satellite_dropdown.grid(row=Satellite_row, column=Satellite_col, columnspan=Satellite_colspan, padx=5, pady=y_padding, sticky='ew')
-
+satellite_dropdown = ttk.Combobox(MainEntry_frame, textvariable=satellite_var, values=satellite_list, font=('Arial', 14, 'bold'), width=8, state="readonly")
+satellite_dropdown.grid(row=2, column=5, padx=5, pady=Internal_Y_Padding, sticky='ew')
 
 # NAME
-tk.Label(root, text="Name:", font=('Arial', 10)).grid(row=Name_header_row, column=Name_header_col, columnspan=Name_header_colspan, padx=5, pady=y_padding, sticky='e')
-name_entry = tk.Entry(root, textvariable=name_var, font=('Arial', 10, 'bold'))
-name_entry.grid(row=Name_row, column=Name_col, columnspan=Name_colspan, padx=5, pady=y_padding, sticky='w')
+tk.Label(MainEntry_frame, text="Name:", font=('Arial', 10)).grid(row=3, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+name_entry = tk.Entry(MainEntry_frame, textvariable=name_var, font=('Arial', 12, 'bold'))
+name_entry.grid(row=3, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 name_entry.bind("<FocusIn>", set_focus_color)
 name_entry.bind("<FocusOut>", reset_focus_color)
 
 # COMMENT
-tk.Label(root, text="Comment:", font=('Arial', 10)).grid(row=Comment_header_row, column=Comment_header_col, columnspan=Comment_header_colspan, padx=5, pady=y_padding, sticky='e')
-comment_entry = tk.Entry(root, textvariable=comment_var, font=('Arial', 10, 'bold'))
-comment_entry.grid(row=Comment_row, column=Comment_col, columnspan=Comment_colspan, padx=5, pady=y_padding, sticky='ew')
+tk.Label(MainEntry_frame, text="Comment:", font=('Arial', 10)).grid(row=3, column=2, padx=5, pady=Internal_Y_Padding, sticky='e')
+comment_entry = tk.Entry(MainEntry_frame, textvariable=comment_var, font=('Arial', 12, 'bold'))
+comment_entry.grid(row=3, column=3, columnspan=3, padx=5, pady=Internal_Y_Padding, sticky='ew')
 comment_entry.bind("<FocusIn>", set_focus_color)
 comment_entry.bind("<FocusOut>", reset_focus_color)
 
+
+
+
+
+
+
+
+
+
+WWFFPOTA_frame = tk.Frame(root, bd=2, relief='groove', pady=Internal_Y_Padding)
+WWFFPOTA_frame.grid(row=WWFFPOTA_Frame_row, column=0, columnspan=99, sticky='ew', padx=5, pady=Frame_Y_Padding)
+
+WWFFPOTA_frame.grid_columnconfigure(0, weight=0, minsize=70)
+WWFFPOTA_frame.grid_columnconfigure(1, weight=0, minsize=50)
+WWFFPOTA_frame.grid_columnconfigure(2, weight=0, minsize=50)
+WWFFPOTA_frame.grid_columnconfigure(3, weight=0, minsize=50)
+WWFFPOTA_frame.grid_columnconfigure(4, weight=0, minsize=50)
+
 # WWFF
-tk.Label(root, text="WWFF:", font=('Arial', 10)).grid(row=WWFF_header_row, column=WWFF_header_col, columnspan=WWFF_header_colspan, padx=5, pady=y_padding, sticky='e')
-wwff_entry = tk.Entry(root, textvariable=wwff_var, font=('Arial', 10, 'bold'))
-wwff_entry.grid(row=WWFF_row, column=WWFF_col, columnspan=WWFF_colspan, padx=5, pady=y_padding, sticky='ew')
+tk.Label(WWFFPOTA_frame, text="WWFF:", font=('Arial', 10)).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+wwff_entry = tk.Entry(WWFFPOTA_frame, textvariable=wwff_var, font=('Arial', 14, 'bold'), width=10)
+wwff_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 wwff_entry.bind("<FocusIn>", set_focus_color)
 wwff_entry.bind("<FocusOut>", reset_focus_color)
 
 # POTA
-tk.Label(root, text="POTA:", font=('Arial', 10)).grid(row=POTA_header_row, column=POTA_header_col, columnspan=POTA_header_colspan, padx=5, pady=y_padding, sticky='e')
-pota_entry = tk.Entry(root, textvariable=pota_var, font=('Arial', 10, 'bold'))
-pota_entry.grid(row=POTA_row, column=POTA_col, columnspan=POTA_colspan, padx=5, pady=y_padding, sticky='ew')
+tk.Label(WWFFPOTA_frame, text="POTA:", font=('Arial', 10)).grid(row=0, column=2, padx=5, pady=Internal_Y_Padding, sticky='e')
+pota_entry = tk.Entry(WWFFPOTA_frame, textvariable=pota_var, font=('Arial', 14, 'bold'), width=10)
+pota_entry.grid(row=0, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
 pota_entry.bind("<FocusIn>", set_focus_color)
 pota_entry.bind("<FocusOut>", reset_focus_color)
 
-# ---------------------
-separator = ttk.Separator(root, orient='horizontal')
-separator.grid(row=Seperator_5_row, column=Seperator_5_col, columnspan=Seperator_5_colspan, sticky='ew', padx=5, pady=0)
 
 
-tk.Label(root, text="Extra QRZ Lookup results", bg='lightgrey', font=('Arial', 10, 'bold')).grid(row=QRZ_text_row, column=QRZ_text_col, columnspan=QRZ_text_colspan, padx=5, pady=y_padding, sticky='ew')
 
-# Address
-tk.Label(root, text="QSL Info:", font=('Arial', 10)).grid(row=QSL_info_header_row, column=QSL_info_header_col, columnspan=QSL_info_header_colspan, padx=5, pady=y_padding, sticky='e')
-qsl_info_entry = tk.Entry(root, textvariable=qsl_info_var, font=('Arial', 10, 'bold'))
-qsl_info_entry.grid(row=QSL_info_row, column=QSL_info_col, columnspan=QSL_info_colspan, padx=(5,15), pady=y_padding, sticky='ew')
+
+
+
+
+
+
+QRZ_info_frame = tk.Frame(root, bd=2, relief='groove', pady=Internal_Y_Padding)
+QRZ_info_frame.grid(row=QRZ_Info_Frame_row, column=0, columnspan=7, sticky='ew', padx=5, pady=Frame_Y_Padding)
+
+# Titel
+tk.Label(QRZ_info_frame, text="Extra QRZ Lookup results", bg='lightgrey', font=('Arial', 10, 'bold')).grid(row=0, column=0, columnspan=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
+
+# QSL Info
+tk.Label(QRZ_info_frame, text="QSL Info:", font=('Arial', 10)).grid(row=0, column=2, sticky='e', padx=5, pady=Internal_Y_Padding)
+qsl_info_entry = tk.Entry(QRZ_info_frame, textvariable=qsl_info_var, font=('Arial', 10, 'bold'))
+qsl_info_entry.grid(row=0, column=3, columnspan=4, padx=(5, 15), pady=Internal_Y_Padding, sticky='ew')
 qsl_info_entry.bind("<FocusIn>", set_focus_color)
 qsl_info_entry.bind("<FocusOut>", reset_focus_color)
+qsl_info_entry.configure(takefocus=False)
 
 # Address
-tk.Label(root, text="Address:", font=('Arial', 10)).grid(row=Address_header_row, column=Address_header_col, columnspan=Address_header_colspan, padx=5, pady=y_padding, sticky='e')
-address_entry = tk.Entry(root, textvariable=address_var, font=('Arial', 10, 'bold'))
-address_entry.grid(row=Address_row, column=Address_col, columnspan=Address_colspan, padx=5, pady=y_padding, sticky='ew')
+tk.Label(QRZ_info_frame, text="Address:", font=('Arial', 10)).grid(row=1, column=0, sticky='e', padx=5, pady=Internal_Y_Padding)
+address_entry = tk.Entry(QRZ_info_frame, textvariable=address_var, font=('Arial', 10, 'bold'))
+address_entry.grid(row=1, column=1, columnspan=3, padx=5, pady=Internal_Y_Padding, sticky='ew')
 address_entry.bind("<FocusIn>", set_focus_color)
 address_entry.bind("<FocusOut>", reset_focus_color)
+address_entry.configure(takefocus=False)
 
-# City
-tk.Label(root, text="City:", font=('Arial', 10)).grid(row=City_header_row, column=City_header_col, columnspan=City_header_colspan, padx=5, pady=y_padding, sticky='e')
-city_entry = tk.Entry(root, textvariable=city_var, font=('Arial', 10, 'bold'))
-city_entry.grid(row=City_row, column=City_col, columnspan=City_colspan, padx=5, pady=y_padding, sticky='w')
-city_entry.bind("<FocusIn>", set_focus_color)
-city_entry.bind("<FocusOut>", reset_focus_color)
-
-# Zip Code
-tk.Label(root, text="Zipcode:", font=('Arial', 10)).grid(row=Zipcode_header_row, column=Zipcode_header_col, columnspan=Zipcode_header_colspan, padx=5, pady=y_padding, sticky='e')
-zipcode_entry = tk.Entry(root, textvariable=zipcode_var, font=('Arial', 10, 'bold'))
-zipcode_entry.grid(row=Zipcode_row, column=Zipcode_col, columnspan=Zipcode_colspan, padx=5, pady=y_padding, sticky='w')
-zipcode_entry.bind("<FocusIn>", set_focus_color)
-zipcode_entry.bind("<FocusOut>", reset_focus_color)
-
-# Heading Info
-tk.Label(root, text="Heading:", font=('Arial', 10)).grid(row=Heading_header_row, column=Heading_header_col, columnspan=1, rowspan=Heading_header_rowspan, padx=0, pady=y_padding, sticky='e')
-heading_entry = tk.Entry(root, textvariable=heading_var, font=('Arial', 10, 'bold'),state='readonly')
-heading_entry.grid(row=Heading_entry_row, column=Heading_entry_col, columnspan=Heading_entry_colspan, rowspan=Heading_entry_rowspan, padx=5, pady=y_padding, sticky='w')
+# Heading
+tk.Label(QRZ_info_frame, text="Heading:", font=('Arial', 10)).grid(row=1, column=4, rowspan=2, sticky='e', padx=0, pady=Internal_Y_Padding)
+heading_entry = tk.Entry(QRZ_info_frame, textvariable=heading_var, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+heading_entry.grid(row=1, column=5, columnspan=2, rowspan=2, padx=5, pady=Internal_Y_Padding, sticky='w')
 heading_entry.configure(takefocus=False)
 
+# City
+tk.Label(QRZ_info_frame, text="City:", font=('Arial', 10)).grid(row=2, column=0, sticky='e', padx=5, pady=Internal_Y_Padding)
+city_entry = tk.Entry(QRZ_info_frame, textvariable=city_var, font=('Arial', 10, 'bold'))
+city_entry.grid(row=2, column=1, sticky='w', padx=5, pady=Internal_Y_Padding)
+city_entry.bind("<FocusIn>", set_focus_color)
+city_entry.bind("<FocusOut>", reset_focus_color)
+city_entry.configure(takefocus=False)
 
-# ---------------------
-separator = ttk.Separator(root, orient='horizontal')
-separator.grid(row=Seperator_2_row, column=Seperator_2_col, columnspan=Seperator_2_colspan, sticky='ew', padx=5)
+# Zipcode
+tk.Label(QRZ_info_frame, text="Zipcode:", font=('Arial', 10)).grid(row=2, column=2, sticky='e', padx=5, pady=Internal_Y_Padding)
+zipcode_entry = tk.Entry(QRZ_info_frame, textvariable=zipcode_var, font=('Arial', 10, 'bold'))
+zipcode_entry.grid(row=2, column=3, sticky='w', padx=5, pady=Internal_Y_Padding)
+zipcode_entry.bind("<FocusIn>", set_focus_color)
+zipcode_entry.bind("<FocusOut>", reset_focus_color)
+zipcode_entry.configure(takefocus=False)
 
-dxcc_frame = tk.Frame(root, bg=bg_color)
-dxcc_frame.grid(row=DXCC_frame_row, column=DXCC_frame_col, columnspan=DXCC_frame_colspan, sticky='ew', padx=10, pady=0)
+QRZ_info_frame.grid_columnconfigure(1, weight=1)
+QRZ_info_frame.grid_columnconfigure(3, weight=1)
+QRZ_info_frame.grid_columnconfigure(5, weight=1)
 
 
 
-# Image label with fixed pixel width
+
+
+
+
+dxcc_frame = tk.Frame(root, bd=2, relief='groove', padx=5, pady=Internal_Y_Padding)
+dxcc_frame.grid(row=DXCC_Frame_row, column=0, columnspan=99, sticky='ew', padx=5, pady=Frame_Y_Padding)
+
+# DXCC image
 dxcc_image_label = tk.Label(dxcc_frame, anchor='center', bg=bg_color)
 dxcc_image_label.grid(row=0, column=0, rowspan=2, padx=5, sticky='ns')
 
-# Country label
-tk.Label(dxcc_frame, text="Country:", font=('Arial', 9), bg=bg_color).grid(row=0, column=1, columnspan=1, pady=0, sticky='e')
-country_label = tk.Label(dxcc_frame, text="----", font=('Arial', 9, 'bold'), bg=bg_color)
-country_label.grid(row=0, column=2, columnspan=2,sticky='w')
+# Country + CQ Zone
+tk.Label(dxcc_frame, text="Country:", font=('Arial', 9), bg=bg_color).grid(row=0, column=1, sticky='e')
+country_label = tk.Label(dxcc_frame, text="----", font=('Arial', 10, 'bold'), bg=bg_color)
+country_label.grid(row=0, column=2, columnspan=2, sticky='w')
 
-# Continent label
-tk.Label(dxcc_frame, text="Continent:", font=('Arial', 9), bg=bg_color).grid(row=1, column=1, columnspan=1, pady=0, sticky='e')
-continent_label = tk.Label(dxcc_frame, text="----", font=('Arial', 9, 'bold'), bg=bg_color)
+# Vertical separator
+separator = ttk.Separator(dxcc_frame, orient='vertical')
+separator.grid(row=0, column=4, rowspan=2, sticky='ns', padx=5)
+
+tk.Label(dxcc_frame, text="CQ Zone:", font=('Arial', 9), bg=bg_color).grid(row=0, column=5, sticky='e')
+dxcc_cq = tk.Label(dxcc_frame, text="----", font=('Arial', 10, 'bold'), bg=bg_color)
+dxcc_cq.grid(row=0, column=6, columnspan=2, sticky='w')
+
+# Continent + ITU Zone
+tk.Label(dxcc_frame, text="Continent:", font=('Arial', 9), bg=bg_color).grid(row=1, column=1, sticky='e')
+continent_label = tk.Label(dxcc_frame, text="----", font=('Arial', 10, 'bold'), bg=bg_color)
 continent_label.grid(row=1, column=2, columnspan=2, sticky='w')
 
-separator = ttk.Separator(dxcc_frame, orient='vertical')
-separator.grid(row=0, column=3, rowspan=2, sticky='ns', padx=5)
+tk.Label(dxcc_frame, text="ITU Zone:", font=('Arial', 9), bg=bg_color).grid(row=1, column=5, sticky='e')
+dxcc_itu = tk.Label(dxcc_frame, text="----", font=('Arial', 10, 'bold'), bg=bg_color)
+dxcc_itu.grid(row=1, column=6, columnspan=2, sticky='w')
 
-# CQ zone label
-tk.Label(dxcc_frame, text="CQ Zone:", font=('Arial', 9), bg=bg_color).grid(row=0, column=5, columnspan=1, pady=0, sticky='e')
-dxcc_cq = tk.Label(dxcc_frame, text="----", font=('Arial', 9, 'bold'), bg=bg_color)
-dxcc_cq.grid(row=0, column=6, columnspan=3, sticky='w')
+dxcc_frame.grid_columnconfigure(0, weight=0, minsize=70)
+dxcc_frame.grid_columnconfigure(2, weight=1, minsize=200)
+dxcc_frame.grid_columnconfigure(6, weight=1, minsize=80)
 
-# ITU zone label
-tk.Label(dxcc_frame, text="ITU Zone:", font=('Arial', 9), bg=bg_color).grid(row=1, column=5, columnspan=1,pady=0, sticky='e')
-dxcc_itu = tk.Label(dxcc_frame, text="----", font=('Arial', 9, 'bold'), bg=bg_color)
-dxcc_itu.grid(row=1, column=6, columnspan=3, sticky='w')
 
-# Kolommen configureren voor responsief gedrag (optioneel)
-dxcc_frame.grid_columnconfigure(0, weight=0)
-dxcc_frame.grid_columnconfigure(2, weight=0, minsize=250)
 
-# ---------------------
-separator = ttk.Separator(root, orient='horizontal')
-separator.grid(row=Seperator_3_row, column=Seperator_3_col, columnspan=Seperator_3_colspan, sticky='ew', padx=5)#
 
-# --- Lookup Button ---
-lookup_button = tk.Button(root, text="Lookup\nF2", command=threaded_on_query, bd=3, relief='raised',width=10, height=2, bg='yellow', fg='black', font=('Arial', 10, 'bold'))
-lookup_button.grid(row=Lookup_button_row, column=Lookup_button_col, columnspan=Lookup_button_colspan, rowspan=Lookup_button_rowspan, padx=15, pady=0, sticky='w')
-lookup_button.configure(takefocus=False)
 
-# LOG BUTTON
-log_button = tk.Button(root, text="Log QSO\nF5", command=log_qso, bd=3, relief='raised',width=10, height=2, bg='green', fg='white', font=('Arial', 10, 'bold'))
-log_button.grid(row=Log_button_row, column=Log_button_col, columnspan=Log_button_colspan, rowspan=Log_button_rowspan, padx=15, pady=0, sticky='w')
-log_button.configure(takefocus=False)
 
-# WIPE BUTTON
-wipe_button = tk.Button(root, text="Wipe\nF1", command=reset_fields, bd=3, relief='raised',width=10, height=2, bg='red', fg='white', font=('Arial', 10, 'bold'))
-wipe_button.grid(row=Wipe_button_row, column=Wipe_button_col, columnspan=Wipe_button_colspan, rowspan=Wipe_button_rowspan, padx=15, pady=0, sticky='w')
-wipe_button.configure(takefocus=False)
+
+
 
 #----------- WORKED BEFORE FRAME ------------
 
-workedb4_frame = tk.Frame(workedb4_window, bg=bg_color)
-workedb4_frame.grid(row=workedb4_row, column=0, columnspan=99, sticky="nsew", pady=(0, 0))
-root.grid_rowconfigure(10, weight=1)
-root.grid_columnconfigure(0, weight=1)
-
+workedb4_frame = tk.Frame(root, bg=bg_color, bd=2, relief='groove', padx=5, pady=Internal_Y_Padding)
+workedb4_frame.grid(row=Workedb4_Frame_row, column=0, columnspan=99, sticky="nsew", pady=Frame_Y_Padding, padx=5)
 
 title_label = tk.Label(workedb4_frame, text="Worked before result", font=('Arial', 11, 'bold'), bg=bg_color)
 title_label.pack(anchor="center", padx=10, pady=(0, 0))
@@ -4737,8 +4768,7 @@ y_scroll.pack(side="right", fill="y")
 
 # TreeView
 cols = ("Callsign", "Date", "Time", "Band", "Frequency", "Mode", "Country")
-workedb4_tree = ttk.Treeview(tree_frame, columns=cols, show='headings', height=5, yscrollcommand=y_scroll.set
-)
+workedb4_tree = ttk.Treeview(tree_frame, columns=cols, show='headings', height=5, yscrollcommand=y_scroll.set)
 
 y_scroll.config(command=workedb4_tree.yview)
 
@@ -4749,13 +4779,51 @@ for col in cols:
 workedb4_tree.pack(fill="both", expand=True)
 
 
-# QRZ Status
-QRZ_status_label = tk.Label(root, font=('Arial', 8, 'bold'))
-QRZ_status_label.grid(row=QRZ_status_header_row, column=QRZ_status_header_col, columnspan=QRZ_status_header_colspan, rowspan=QRZ_status_header_rowspan, padx=15, pady=y_padding, sticky='e')
 
-# LAST QSO
-last_qso_label = tk.Label(root, fg="blue", font=('Arial', 8, 'bold'))
-last_qso_label.grid(row=Last_qso_row, column=Last_qso_col, columnspan=Last_qso_colspan, padx=5, sticky='w')
+Button_frame = tk.Frame(root, bd=2, relief='groove', padx=5, pady=Internal_Y_Padding)
+Button_frame.grid(row=Button_Frame_row, column=0, columnspan=7, pady=Frame_Y_Padding, padx=5, sticky='ew')
+
+Button_frame.grid_columnconfigure(0, weight=1)
+Button_frame.grid_columnconfigure(1, weight=1)
+Button_frame.grid_columnconfigure(2, weight=1)
+Button_frame.grid_columnconfigure(3, weight=1)
+
+# Lookup Button
+lookup_button = tk.Button(Button_frame, text="Lookup\nF2", command=threaded_on_query, bd=3, relief='raised', width=10, height=2, bg='#FFFF80', fg='black', font=('Arial', 10, 'bold'))
+lookup_button.grid(row=0, column=1, padx=10)
+lookup_button.configure(takefocus=False)
+
+# Log Button
+log_button = tk.Button(Button_frame, text="Log QSO\nF5", command=log_qso, bd=3, relief='raised', width=10, height=2, bg='#00FF80', fg='black', font=('Arial', 10, 'bold'))
+log_button.grid(row=0, column=2, padx=10)
+log_button.configure(takefocus=False)
+
+# Wipe Button
+wipe_button = tk.Button(Button_frame, text="Wipe\nF1", command=reset_fields, bd=3, relief='raised', width=10, height=2, bg='#FF8080', fg='black', font=('Arial', 10, 'bold'))
+wipe_button.grid(row=0, column=0, padx=10)
+wipe_button.configure(takefocus=False)
+
+# EXIT Button
+EXIT_button = tk.Button(Button_frame, text="EXIT", command=exit_program, bd=3, relief='raised', width=10, height=2, bg='grey', fg='white', font=('Arial', 10, 'bold'))
+EXIT_button.grid(row=0, column=3, padx=10)
+EXIT_button.configure(takefocus=False)
+
+
+
+
+status_frame = tk.Frame(root, bd=2, relief='groove', padx=5, pady=Internal_Y_Padding)
+status_frame.grid(row=Status_Frame_row, column=0, columnspan=7, rowspan=1, sticky="ew", padx=5, pady=Frame_Y_Padding)
+
+status_frame.grid_columnconfigure(0, weight=1)
+status_frame.grid_columnconfigure(1, weight=1)
+
+# last_qso_label 
+last_qso_label = tk.Label(status_frame, fg="blue", font=('Arial', 8, 'bold'), text="Last QSO info")
+last_qso_label.grid(row=0, column=0, sticky='w', padx=5)
+
+# QRZ_status_label 
+QRZ_status_label = tk.Label(status_frame, font=('Arial', 8, 'bold'), text="QRZ Status")
+QRZ_status_label.grid(row=0, column=1, sticky='e', padx=5)
 
 
 

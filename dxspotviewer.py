@@ -148,7 +148,7 @@ class DXSummitApp:
             url += f"?include_modes={mode}"
 
         try:
-            r = requests.get(url, timeout=10)
+            r = requests.get(url, timeout=5)
             data = loads(r.text)
             self.tree.delete(*self.tree.get_children())
             seen_calls = set()
