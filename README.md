@@ -41,7 +41,7 @@ If anyone is interested in contributing to the project, you're very welcome to j
 
 ![DXCluster](images/dxcluster-hosts.png)
 
-![DXCluster](images/dxcluster-console)
+![DXCluster](images/dxcluster-console.png)
 
 
 # MiniBook Logbook Application Short Manual
