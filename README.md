@@ -37,11 +37,11 @@ If anyone is interested in contributing to the project, you're very welcome to j
 
 ## DX Cluster
 
-(images/dxcluster-spot.png)
+![DXCluster](images/dxcluster-spot.png)
 
-(images/dxcluster-hosts.png)
+![DXCluster](images/dxcluster-hosts.png)
 
-(images/dxcluster-console)
+![DXCluster](images/dxcluster-console)
 
 
 # MiniBook Logbook Application Short Manual
