@@ -9,7 +9,6 @@ echo Installing required Python libraries...
 python -m pip install --upgrade pip
 
 :: Install required packages
-pip install Pillow
 pip install requests
 pip install tkcalendar
 pip install pyserial
