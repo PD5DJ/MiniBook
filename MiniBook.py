@@ -99,6 +99,8 @@
 #                           - dxcc.json is replaced by cty.day, unfortunally cty.dat does not provide dxcc entity numbers, so Flag image had to be removed.
 #                           - Worked before expanded with more matching colors
 # 01-06-2025    :   1.3.8   - QSO's are now processed fully in cache, minimized disk writing time.. worked b4 lookup speed up.
+# 02-06-2025    :   1.3.9   - Locator lookup added. When locator is entered heading and distance always calculated from these entries.
+#               :           - Fix Importing ADIF Duplicate records, when selecting ignore.. no files where added at all
 #**********************************************************************************************************************************
 
 from datetime import datetime, timedelta, date
@@ -126,10 +128,12 @@ import xml.etree.ElementTree as ET
 from DXCluster import launch_dx_spot_viewer
 from cty_parser import parse_cty_file
 
+import traceback
+
 # ------- Set True if you want to print system wide debug information -------
 DEBUG               = False
 
-VERSION_NUMBER = ("v1.3.8 Cached")
+VERSION_NUMBER = ("v1.3.9")
 
 # Configuration file path
 DATA_FOLDER         = Path.cwd()
@@ -642,7 +646,7 @@ def load_json(file_to_load=None):
             print(f"Backup failed: {e}")
 
 
-
+        '''
         try:
             with open(current_json_file, 'r', encoding='utf-8') as file:
                 data = json.load(file)
@@ -703,7 +707,86 @@ def load_json(file_to_load=None):
             messagebox.showerror("Error", "Could not read the file. Please ensure it is a valid JSON file.")
             current_json_file = ""
             no_file_loaded()
-    
+        '''
+
+############ DEBUG PART
+        try:
+            with open(current_json_file, 'r', encoding='utf-8') as file:
+                data = json.load(file)
+                print("----------")
+                print("DEBUG: JSON file loaded successfully")
+
+                # Handle legacy format (flat list)
+                if isinstance(data, list):
+                    print("DEBUG: Detected legacy format (list)")
+
+                    convert_confirm = messagebox.askyesno("Convert Old Format", "Old Logbook format detected! Do you want to convert it to the new format?")
+                    if convert_confirm:
+                        print("DEBUG: User confirmed conversion")
+
+                        data = convert_old_logbook(data)
+                        new_file_path = filedialog.asksaveasfilename(defaultextension=".mbk", filetypes=[("MiniBook files", "*.mbk")])
+                        if new_file_path:
+                            print(f"DEBUG: Saving converted file to {new_file_path}")
+                            with open(new_file_path, 'w', encoding='utf-8') as new_file:
+                                json.dump(data, new_file, indent=4)
+                            messagebox.showinfo("Conversion Successful", "The logbook has been converted and saved.")
+                            current_json_file = new_file_path
+                            update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
+                            reset_fields()
+                            load_station_setup()
+                            file_menu.entryconfig("Station setup", state="normal")
+                        else:
+                            print("DEBUG: User cancelled saving converted file")
+                            messagebox.showinfo("Save Cancelled", "The converted file was not saved.")
+                            current_json_file = ""
+                            no_file_loaded()
+                    else:
+                        print("DEBUG: User declined conversion")
+                        current_json_file = ""
+                        no_file_loaded()
+                    return
+
+                # Handle modern format with Station and Logbook keys
+                elif isinstance(data, dict):
+                    print("DEBUG: Detected modern format (dict)")
+                    if "Station" in data and "Logbook" in data and isinstance(data["Logbook"], list):
+                        print("DEBUG: Valid Station and Logbook keys found")
+                        station_info = data["Station"]
+                        if "Callsign" in station_info and "Locator" in station_info:
+                            print("DEBUG: Station info contains Callsign and Locator")
+                            update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
+                            reset_fields()
+                            load_station_setup()
+                            file_menu.entryconfig("Station setup", state="normal")
+                        else:
+                            print("ERROR: Missing Callsign or Locator in Station info")
+                            messagebox.showerror("Invalid Format", "Missing required fields in 'Station' section.")
+                            current_json_file = ""
+                            no_file_loaded()
+                    else:
+                        print("ERROR: Invalid structure in modern format")
+                        messagebox.showerror("Invalid Format", "The file does not contain a valid logbook structure.")
+                        current_json_file = ""
+                        no_file_loaded()
+
+                # Save the path to config
+                if current_json_file:
+                    print(f"DEBUG: Saving last loaded path: {current_json_file}")
+                    config.set('General', 'last_loaded_logbook', current_json_file)
+                    file_path = DATA_FOLDER / CONFIG_FILE
+                    with open(file_path, 'w') as configfile:
+                        config.write(configfile)
+
+                    load_json_content()
+
+        except Exception as e:
+            print("ERROR: Exception during logbook loading:")
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Could not read the file:\n{str(e)}")
+            current_json_file = ""
+            no_file_loaded()
+
 
 
 
@@ -724,25 +807,26 @@ def load_json_content():
         qso_lines = []
         return
 
-    # Als tree niet bestaat, stop hier (qso_lines is gevuld)
-    if tree is None:
+    # Stop hier als tree niet bestaat of al vernietigd is
+    if tree is None or not tree.winfo_exists():
         return
 
-    # Treeview leegmaken
-    tree.delete(*tree.get_children())
+    try:
+        tree.delete(*tree.get_children())
+    except Exception as e:
+        print(f"Error accessing tree widget: {e}")
+        return
 
     if not qso_lines:
-        # Geen QSO entries
-        if qso_count_label:
+        if qso_count_label and qso_count_label.winfo_exists():
             qso_count_label.config(text="Total of 0 QSO's in logbook")
         print("No QSO entries found in the MiniBook file.")
         return
 
-    # Sorteer en vul Treeview
     try:
         for qso in qso_lines:
             qso['DateTime'] = datetime.strptime(
-                f"{qso['Date']} {qso.get('Time','')}", '%Y-%m-%d %H:%M:%S'
+                f"{qso['Date']} {qso.get('Time', '')}", '%Y-%m-%d %H:%M:%S'
             ) if qso.get('Time') else datetime.strptime(qso['Date'], '%Y-%m-%d')
 
         qso_lines.sort(key=lambda x: x['DateTime'], reverse=True)
@@ -780,7 +864,7 @@ def load_json_content():
                 qso.get('Satellite', '')
             ), tags=(tag,))
 
-        if qso_count_label:
+        if qso_count_label and qso_count_label.winfo_exists():
             qso_count_label.config(text=f"Total of {qso_counter} QSO's in logbook")
 
         tree.tag_configure("oddrow", background="#f0f0f0")
@@ -788,6 +872,8 @@ def load_json_content():
 
     except ValueError as e:
         print(f"Error processing date and time: {e}")
+
+
 
 
 
@@ -1899,7 +1985,7 @@ def import_adif():
             messagebox.showerror("Error", f"Failed to load ADIF file: {e}")
             return
 
-    qso_records = content.split("<EOR>")
+    qso_records = re.split(r'<eor>', content, flags=re.IGNORECASE)
 
     # Setup progress window
     progress_window = tk.Toplevel(root)
@@ -1997,7 +2083,7 @@ def import_adif():
                         logbook_data["Logbook"][idx] = duplicate_entry
                         break
         elif action == "Ignore":
-            new_entries = []
+            pass
         elif action == "Add":
             new_entries.extend(duplicates)
             added_count = len(new_entries)
@@ -3975,6 +4061,8 @@ def find_coordinates_by_callsign(callsign):
     return None, None
 
 
+
+
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371.0  # Earth radius in kilometers
     phi1 = math.radians(lat1)
@@ -4047,6 +4135,11 @@ def check_callsign_prefix(callsign, update_ui=True):
             distance_label.config(text=(f"{(distance_var_km.get())} / {(distance_var_miles.get())}"))
             dxcc_cq_itu_label.config(text=(f"CQ: {cq}, ITU: {itu}"))
 
+            # OVERSCHRIJF distance/heading indien locator ingevuld is
+            if locator_var.get().strip():
+                calculate_from_locator()
+
+
     else:
         continent_var = ""
         country_var = "[None]"
@@ -4060,6 +4153,50 @@ def check_callsign_prefix(callsign, update_ui=True):
 
 
 
+def calculate_from_locator():
+    """
+    Berekent heading en afstand op basis van locator_var en my_locator_var.
+    """
+    loc = locator_var.get().strip().upper()
+    my_loc = my_locator_var.get().strip().upper()
+
+    if not is_valid_locator(loc) or not is_valid_locator(my_loc):
+        return
+
+    # Gebruik midden van de locator (centroid)
+    def locator_to_latlon(locator):
+        try:
+            locator = locator.strip().upper()
+            if len(locator) < 4:
+                return None, None
+
+            A = ord('A')
+            lon = (ord(locator[0]) - A) * 20 - 180
+            lat = (ord(locator[1]) - A) * 10 - 90
+            lon += int(locator[2]) * 2
+            lat += int(locator[3]) * 1
+            if len(locator) >= 6:
+                lon += (ord(locator[4]) - A) * 5 / 60
+                lat += (ord(locator[5]) - A) * 2.5 / 60
+            else:
+                lon += 1  # center
+                lat += 0.5
+            return lat, lon
+        except Exception:
+            return None, None
+
+    lat1, lon1 = locator_to_latlon(my_loc)
+    lat2, lon2 = locator_to_latlon(loc)
+
+    if None in (lat1, lon1, lat2, lon2):
+        return
+
+    sp, lp = calculate_headings(lat1, lon1, lat2, lon2)
+    heading_label.config(text=f"SP: {sp}°  /  LP: {lp}°")
+
+    distance_km = haversine(lat1, lon1, lat2, lon2)
+    distance_miles = distance_km * 0.621371
+    distance_label.config(text=f"{distance_km:.1f}km / {distance_miles:.1f}mi")
 
 
 
@@ -4257,6 +4394,7 @@ address_var = tk.StringVar()
 qsl_info_var = tk.StringVar()
 locator_var = tk.StringVar()
 locator_var.trace("w", lambda *args: locator_var.set(locator_var.get().upper()))
+locator_var.trace_add("write", lambda *args: calculate_from_locator())
 my_locator_var = tk.StringVar()
 my_location_var = tk.StringVar()
 my_callsign_var = tk.StringVar()

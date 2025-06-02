@@ -172,6 +172,11 @@ class DXClusterApp:
 
         # UI setup
         self.setup_ui()
+
+        # Make sure that external .destroy() calls also trigger on_close
+        self.root.destroy_original = self.root.destroy
+        self.root.destroy = self.on_close_wrapper
+
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
         # Load Hosts en DXCC
@@ -192,6 +197,8 @@ class DXClusterApp:
 
 
 
+    def on_close_wrapper(self):
+        self.on_close() # Process everything through the standard shutdown routine
 
 
 
@@ -368,8 +375,6 @@ class DXClusterApp:
 
         exit_btn = tk.Button(exit_right, text="Exit", command=self.on_close, fg="black", bg="lightgrey", width=12)
         exit_btn.pack(padx=10)
-
-
 
         self.output = tk.Text(self.tab_output, fg="white", bg="black", height=10, width=80)
         self.output.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -1087,7 +1092,7 @@ class DXClusterApp:
 
 
 
-    def on_close(self):
+    def on_close(self): 
         self.connected = False
         if hasattr(self, 'writer') and self.writer is not None:
             try:
@@ -1100,7 +1105,12 @@ class DXClusterApp:
         y = self.root.winfo_y()
         self.save_window_position(x, y)
 
-        self.root.destroy()
+        # Always call the original destroy (even if it comes via MiniBook)
+        if hasattr(self.root, 'destroy_original'):
+            self.root.destroy_original()
+        else:
+            self.root.destroy()
+
 
 
     def save_window_position(self, x, y):
