@@ -23,10 +23,18 @@ When you start the setup it is very important that you click the following optio
 
 ![IMPORTANT](images/PYTHON_PATH.png)
 
-In the downloaded folder is the file **install_python_packages_Windows.bat**
 
-Run this and all packages are installed.
-You can then click on **MiniBook.py** and start it
+## Download MiniBook
+- https://github.com/PD5DJ/MiniBook/archive/refs/heads/main.zip
+- Extract the zip file, and copy/move the minibook-main folder to your desired location.
+- In the minibook folder you will find the file **install_python_packages_Windows.bat**.
+  This will install all the necessary Python packages to run MiniBook.
+- Then run **Install_Windows_Desktop_Shortcuts.bat** this will install shortcuts on your desktop to MiniBook & HamlibServer
+- You are ready to use MiniBook!
+
+
+---
+
 
 This is my first serious Python project, developed with the help of ChatGPT.
 If anyone is interested in contributing to the project, you're very welcome to join!
