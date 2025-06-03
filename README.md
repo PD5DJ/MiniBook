@@ -25,7 +25,7 @@ When you start the setup it is very important that you click the following optio
 
 ### Important!, RESTART Windows after intallation!
 
-<span style="color:red">some **This is Red Bold.** text</span>
+
 
 ## Download MiniBook
 - https://github.com/PD5DJ/MiniBook/archive/refs/heads/main.zip
