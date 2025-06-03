@@ -16,7 +16,7 @@ MiniBook stands out as a truly portable logbook, and packed with everything you 
 ---
 # Installation (Windows)
 
-## You will need Python installed on your system.
+<span style="color:red">## You will need Python installed on your system. text</span>
 
 You can download Python here: https://www.python.org/downloads/
 When you start the setup it is very important that you click the following option **"Add Python.exe to PATH"**!
