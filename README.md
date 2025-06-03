@@ -31,9 +31,12 @@ When you start the setup it is very important that you click the following optio
 - https://github.com/PD5DJ/MiniBook/archive/refs/heads/main.zip
 - Extract the zip file, and copy/move the minibook-main folder to your desired location.
 ### Next Steps are Windows Only! 
-- In the minibook folder you will find the file **install_python_packages_Windows.bat**.
+- In the minibook folder you will find the file:
+  **install_python_packages_Windows.bat**
   This will install all the necessary Python packages to run MiniBook.
-- Then run **Install_Windows_Desktop_Shortcuts.bat** this will install shortcuts on your desktop to MiniBook & HamlibServer
+- Then run:
+  **Install_Windows_Desktop_Shortcuts.bat**
+  this will install shortcuts on your desktop to MiniBook & HamlibServer
 - You are ready to use MiniBook!
 
 
