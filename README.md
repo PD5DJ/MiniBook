@@ -23,7 +23,7 @@ When you start the setup it is very important that you click the following optio
 
 ![IMPORTANT](images/PYTHON_PATH.png)
 
-<span style="color:red">### RESTART Windows after intallation, Important!</span>
+<span style="color:red">**RESTART Windows after intallation, Important!**</span>
 
 ## Download MiniBook
 - https://github.com/PD5DJ/MiniBook/archive/refs/heads/main.zip
