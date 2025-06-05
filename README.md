@@ -29,6 +29,7 @@ MiniBook stands out as a truly portable logbook, and packed with everything you 
   
 ![IMPORTANT](images/PYTHON_PATH.png)
 
+# Tested on Windows 7 32/64Bit, Windows 10/11
 
 ---
 
