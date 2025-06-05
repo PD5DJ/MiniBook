@@ -1,0 +1,2 @@
+"MiniBook.py" "MiniBook" "MiniBook.ico"
+"HamlibServer.py" "HamlibServer" "HamlibServer.ico"
