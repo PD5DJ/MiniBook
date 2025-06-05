@@ -100,7 +100,8 @@
 #                           - Worked before expanded with more matching colors
 # 01-06-2025    :   1.3.8   - QSO's are now processed fully in cache, minimized disk writing time.. worked b4 lookup speed up.
 # 02-06-2025    :   1.3.9   - Locator lookup added. When locator is entered heading and distance always calculated from these entries.
-#               :           - Fix Importing ADIF Duplicate records, when selecting ignore.. no files where added at all
+#                           - Fix Importing ADIF Duplicate records, when selecting ignore.. no files where added at all
+#                           - Fix in QRZ Lookup when entering multiple / call was not found.. i.e. DK/PD5DJ/P was not found.
 #**********************************************************************************************************************************
 
 from datetime import datetime, timedelta, date
@@ -155,8 +156,6 @@ dxcc_window         = None
 workedb4_tree       = None
 workedb4_frame      = None
 dxspotviewer_window = None
-
-
 
 # -------- Operating mode options --------
 mode_options        = ["AM", "FM", "USB", "LSB", "SSB", "CW", "CW-R", "DIG", "RTTY", "MFSK", "DYNAMIC", "JT65", "JT8", "FT8", "PSK31", "PSK64", "PSK125", "QPSK31", "PKT","OLIVIA", "SSTV", "VARA","DOMINO"]
@@ -2923,26 +2922,24 @@ def disconnect_from_hamlib():
 
 # Function to handle RPRT x error codes
 def handle_rprtx_error(error_code):
-    print(f"Error code: {error_code}")
+    print(f"[Hamlib] RPRT {error_code}:")
+
+    if error_code in [-7, -9]:
+        print(f"[Hamlib] Critical RPRT {error_code}, please restart HamlibServer.")
+        messagebox.showerror("Hamlib Server Error", "Please restart HamlibServer")
+        disconnect_from_hamlib()
+        return
+
     error_messages = {
         -5: "I/O error (communication failure).",
-        -7: "Lost connection",
         -8: "Communication timed out with the radio.",
-        -9: "Invalid command or parameter sent to the radio.",
         -10: "Radio not present or unable to communicate.",
         -11: "Command rejected by the radio.",
     }
 
-    # Optionally terminate the connection on critical errors
-    if error_code in [-5, -7, -8, -9, -10, -11]:
-        disconnect_from_hamlib()
-        
-    # Get the error message or fallback to a generic message
     error_message = error_messages.get(error_code, f"Unknown hamlib error (RPRT {error_code}).")
     messagebox.showerror("hamlib Error", error_message)
 
-# Function to update frequency and mode
-stop_frequency_thread = threading.Event()  # Event to stop the thread
 
 
 
@@ -2960,9 +2957,15 @@ def update_frequency_and_mode_thread():
             break
 
         try:
-            # --- Request Frequency ---
             socket_connection.sendall(b"f\n")
             freq_resp = socket_connection.recv(64).decode().strip()
+
+            if "RPRT -7" in freq_resp:
+                handle_rprtx_error(-7)
+                break
+            if "RPRT -9" in freq_resp:
+                handle_rprtx_error(-9)
+                break
             if freq_resp.isdigit():
                 frequency_hz = int(freq_resp)
                 frequency_mhz = frequency_hz / 1_000_000
@@ -2972,11 +2975,17 @@ def update_frequency_and_mode_thread():
 
             time.sleep(0.1)
 
-            # --- Request Mode & Passband ---
             socket_connection.sendall(b"m\n")
             response = socket_connection.recv(256).decode().strip()
-            lines = response.splitlines()
 
+            if "RPRT -7" in response:
+                handle_rprtx_error(-7)
+                break
+            if "RPRT -9" in response:
+                handle_rprtx_error(-9)
+                break
+
+            lines = response.splitlines()
             if len(lines) >= 2:
                 mode = lines[0].strip()
                 passband_str = lines[1].strip()
@@ -2988,15 +2997,13 @@ def update_frequency_and_mode_thread():
 
                 try:
                     pb = int(passband_str)
-                    if pb > 0:  # If passband is valid
-                        if pb != last_passband:  # Only print if passband has changed
-                            last_passband = pb
-                            print(f"[Hamlib] Passband updated to: {last_passband}")
+                    if pb > 0 and pb != last_passband:
+                        last_passband = pb
+                        print(f"[Hamlib] Passband updated to: {last_passband}")
                 except ValueError:
                     print(f"[Hamlib] Invalid passband: {passband_str}")
             else:
                 print(f"[Hamlib] Incomplete mode/passband response: {lines}")
-
 
         except (socket.error, ValueError) as e:
             print(f"[Hamlib] Communication error: {e}")
@@ -3004,6 +3011,8 @@ def update_frequency_and_mode_thread():
             break
 
         time.sleep(0.5)
+
+
 
 
 
@@ -3021,6 +3030,19 @@ def handle_callsign_or_frequency_entry(event=None):
     def refocus():
         callsign_var.set("")
         callsign_entry.focus_set()
+
+    def handle_rprt_error_with_popup(code):
+        print(f"[Hamlib] Error code: {code}. Please restart HamlibServer.")
+        messagebox.showerror("Hamlib Server Error", "Please restart HamlibServer")
+
+    def check_response(response):
+        if "RPRT -7" in response:
+            handle_rprt_error_with_popup(-7)
+            return False
+        if "RPRT -9" in response:
+            handle_rprt_error_with_popup(-9)
+            return False
+        return True
 
     # --- + / - KHz steps ---
     if re.fullmatch(r'[+-]\d{1,5}', value):
@@ -3046,8 +3068,11 @@ def handle_callsign_or_frequency_entry(event=None):
             while True:
                 chunk = socket_connection.recv(1024).decode()
                 response += chunk
-                if "RPRT 0" in response or time.time() > timeout:
+                if "RPRT 0" in response or "RPRT -7" in response or "RPRT -9" in response or time.time() > timeout:
                     break
+
+            if not check_response(response):
+                return refocus()
 
             if "RPRT 0" in response:
                 print(f"[Hamlib] Frequency adjusted by {step_khz} kHz to {new_freq_hz} Hz")
@@ -3067,18 +3092,20 @@ def handle_callsign_or_frequency_entry(event=None):
             return refocus()
 
         try:
-            # 1. Get current mode and passband
             socket_connection.sendall(b"+m\n")
             mode_response = ""
             timeout = time.time() + 1.0
             while True:
                 chunk = socket_connection.recv(1024).decode()
                 mode_response += chunk
-                if "RPRT 0" in mode_response or time.time() > timeout:
+                if "RPRT 0" in mode_response or "RPRT -7" in mode_response or "RPRT -9" in mode_response or time.time() > timeout:
                     break
 
+            if not check_response(mode_response):
+                return refocus()
+
             current_mode = None
-            current_passband = -1  # use -1 to retain the current passband
+            current_passband = -1
 
             for line in mode_response.strip().splitlines():
                 if line.startswith("Mode:"):
@@ -3089,19 +3116,20 @@ def handle_callsign_or_frequency_entry(event=None):
                     except ValueError:
                         print(f"[Hamlib] Invalid passband format in: '{line}'")
 
-            # 2. Only change mode if necessary
             if current_mode != value:
                 command = f"+M {value} {current_passband}\n"
                 socket_connection.sendall(command.encode())
 
-                # 3. Read the response
                 response = ""
                 timeout = time.time() + 1.0
                 while True:
                     chunk = socket_connection.recv(1024).decode()
                     response += chunk
-                    if "RPRT 0" in response or time.time() > timeout:
+                    if "RPRT 0" in response or "RPRT -7" in response or "RPRT -9" in response or time.time() > timeout:
                         break
+
+                if not check_response(response):
+                    return refocus()
 
                 if "RPRT 0" in response:
                     print(f"[Hamlib] Mode successfully set to {value} with passband {current_passband}")
@@ -3117,7 +3145,7 @@ def handle_callsign_or_frequency_entry(event=None):
 
         return refocus()
 
-    # --- Frequency input (e.g. 7000 kHz) ---
+    # --- Frequency input ---
     if re.fullmatch(r'\d{4,7}', value):
         try:
             frequency_khz = int(value)
@@ -3137,8 +3165,11 @@ def handle_callsign_or_frequency_entry(event=None):
             while True:
                 chunk = socket_connection.recv(1024).decode()
                 response += chunk
-                if "RPRT 0" in response or time.time() > timeout:
+                if "RPRT 0" in response or "RPRT -7" in response or "RPRT -9" in response or time.time() > timeout:
                     break
+
+            if not check_response(response):
+                return refocus()
 
             if "RPRT 0" in response:
                 print(f"[Hamlib] Frequency successfully set to {frequency_hz} Hz")
@@ -3158,6 +3189,7 @@ def handle_callsign_or_frequency_entry(event=None):
     # --- Invalid input ---
     print(f"[Input] Ignored: '{value}' is not a valid kHz frequency or supported mode.")
     return refocus()
+
 
 
 
@@ -3750,13 +3782,50 @@ def query_callsign(session_key, callsign):
             print(f"Error fetching QRZ XML for {cs}:", e)
             return None
 
+    # Probeer de originele callsign
     callsign_element = do_query(callsign)
 
+    # Als niet gevonden en callsign bevat slashes, probeer variaties
     if callsign_element is None and "/" in callsign:
-        parts = callsign.split("/")
-        if len(parts) == 2:
-            base_callsign = parts[1] if len(parts[1]) >= len(parts[0]) else parts[0]
-            callsign_element = do_query(base_callsign)
+        parts = [p for p in callsign.split("/") if p]  # filter lege strings
+        tried = set()
+
+        # Probeer individuele delen
+        for part in sorted(parts, key=len, reverse=True):
+            if part not in tried:
+                callsign_element = do_query(part)
+                tried.add(part)
+                if callsign_element is not None:
+                    break
+
+        # Probeer combinaties van twee delen
+        if callsign_element is None and len(parts) >= 2:
+            for i in range(len(parts)):
+                for j in range(i + 1, len(parts)):
+                    combo = f"{parts[i]}/{parts[j]}"
+                    if combo not in tried:
+                        callsign_element = do_query(combo)
+                        tried.add(combo)
+                        if callsign_element is not None:
+                            break
+                if callsign_element is not None:
+                    break
+
+        # Probeer combinaties van drie delen
+        if callsign_element is None and len(parts) >= 3:
+            for i in range(len(parts)):
+                for j in range(i + 1, len(parts)):
+                    for k in range(j + 1, len(parts)):
+                        combo = f"{parts[i]}/{parts[j]}/{parts[k]}"
+                        if combo not in tried:
+                            callsign_element = do_query(combo)
+                            tried.add(combo)
+                            if callsign_element is not None:
+                                break
+                    if callsign_element is not None:
+                        break
+                if callsign_element is not None:
+                    break
 
     ns = {"qrz": "http://xmldata.qrz.com"}
 
@@ -3788,6 +3857,7 @@ def query_callsign(session_key, callsign):
         "lon": lon,
         "mapslink": maps_link,
     }
+
 
 def threaded_on_query():
     threading.Thread(target=on_query_thread, daemon=True).start()
@@ -4430,6 +4500,8 @@ upload_qrz_var = tk.BooleanVar(value=False)
 # Preparation of hamlib in Threaded mode
 hamlib_process = None
 socket_connection = None
+
+stop_frequency_thread = threading.Event()
 
 update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
 
