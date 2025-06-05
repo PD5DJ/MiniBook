@@ -16,21 +16,34 @@ MiniBook stands out as a truly portable logbook, and packed with everything you 
 ---
 # Installation (Windows)
 
-## You will need Python installed on your system.
+## You will need Python installed on your system
 
-You can download Python here: https://www.python.org/downloads/
-When you start the setup it is very important that you click the following option **"Add Python.exe to PATH"**!
+### Windows 7
+
+- 32bit: https://www.python.org/ftp/python/3.8.10/python-3.8.10.exe
+- 64bit: https://www.python.org/ftp/python/3.8.10/python-3.8.10-amd64.exe
+
+### Windows 10/11
+- You can download the latest Python versie here: https://www.python.org/downloads/
+
+When you start the setup it is very important that you click the following option: **"Add Python.exe to PATH"**!
 
 ![IMPORTANT](images/PYTHON_PATH.png)
+
+### Important!, RESTART Windows after intallation!
+
 
 
 ## Download MiniBook
 - https://github.com/PD5DJ/MiniBook/archive/refs/heads/main.zip
 - Extract the zip file, and copy/move the minibook-main folder to your desired location.
 ### Next Steps are Windows Only! 
-- In the minibook folder you will find the file **install_python_packages_Windows.bat**.
+- In the minibook folder you will find the file:
+  **install_python_packages_Windows.bat**
   This will install all the necessary Python packages to run MiniBook.
-- Then run **Install_Windows_Desktop_Shortcuts.bat** this will install shortcuts on your desktop to MiniBook & HamlibServer
+- Then run:
+  **Install_Windows_Desktop_Shortcuts.bat**
+  this will install shortcuts on your desktop to MiniBook & HamlibServer
 - You are ready to use MiniBook!
 
 
