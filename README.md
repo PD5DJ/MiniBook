@@ -21,9 +21,9 @@ MiniBook stands out as a truly portable logbook, and packed with everything you 
 - Extract the zip file, and copy/move the minibook-main folder to your desired location.
 ### Next Steps are Windows Only! 
 - In the minibook folder you will find the file:
-  **Appinstaller.exe**
+  **MiniBook_Installer.exe**
   This installer will check for existing Python installation. if not exists it will download the appropriate Python version for your windows operating system.
-  After installation re-run the **AppInstaller.exe** it will now create shortcuts to your Desktop.
+  After installation re-run the **MiniBook_Installer.exe** it will now create shortcuts to your Desktop.
 
   Important!, check the box **"ADD PHYTON.EXE TO PATH"**
   
