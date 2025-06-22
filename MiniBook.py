@@ -102,6 +102,11 @@
 # 02-06-2025    :   1.3.9   - Locator lookup added. When locator is entered heading and distance always calculated from these entries.
 #                           - Fix Importing ADIF Duplicate records, when selecting ignore.. no files where added at all
 #                           - Fix in QRZ Lookup when entering multiple / call was not found.. i.e. DK/PD5DJ/P was not found.
+# 15-06-2025    :   1.4.0   - QRZ Lookup Fix, better filtering with dashes in callsigns.
+#                             When no match, it will try to retrieve first and last name using base callsign.
+#                             For example: if VK/PD5DJ is not found, it will use names from PD5DJ only.
+#                           - Also when callsign retrieves no qrz data, fields are wiped also.
+#                           - Heading and Distance calculation improved
 #**********************************************************************************************************************************
 
 from datetime import datetime, timedelta, date
@@ -134,7 +139,7 @@ import traceback
 # ------- Set True if you want to print system wide debug information -------
 DEBUG               = False
 
-VERSION_NUMBER = ("v1.3.9")
+VERSION_NUMBER = ("v1.4.0")
 
 # Configuration file path
 DATA_FOLDER         = Path.cwd()
@@ -211,6 +216,12 @@ def open_dxspotviewer():
     dxspotviewer_window = tk.Toplevel()
     dxspotviewer_window.resizable(False, False)
 
+    def get_last_qso_callsign():
+        return callsign_var.get().strip()
+
+    def get_current_frequency():
+        return frequency_var.get().strip()
+
     launch_dx_spot_viewer(
         rigctl_host=hamlib_ip_var.get().strip() or "127.0.0.1",
         rigctl_port=int(hamlib_port_var.get()) if str(hamlib_port_var.get()).isdigit() else 4532,
@@ -218,6 +229,8 @@ def open_dxspotviewer():
         on_callsign_selected=handle_callsign_from_spot,
         get_worked_calls=get_worked_calls,
         get_worked_calls_today=get_worked_calls_today,
+        get_last_qso_callsign=get_last_qso_callsign,
+        get_current_frequency=get_current_frequency,        
         parent_window=dxspotviewer_window
     )
 
@@ -2480,7 +2493,8 @@ def upload_to_qrz(qso, showstatus):
         response = requests.post("https://logbook.qrz.com/api", data=post_data)
         if response.status_code == 200:
             if "RESULT=OK" in response.text:
-                msg = f"✅ QSO {qso.get('CALL', '') or qso.get('Callsign', '')} successfully uploaded to QRZ."
+                callsign = qso.get('CALL', '') or qso.get('Callsign', '')
+                msg = f"✅ QSO {callsign} successfully uploaded to QRZ."
 
                 color = "green"
             elif "RESULT=FAIL" in response.text:
@@ -2513,7 +2527,16 @@ def upload_to_qrz(qso, showstatus):
         print(msg)
 
     if not showstatus:
-        QRZ_status_label.config(text=msg, fg=color)
+        QRZ_status_label.config(
+            text=msg,
+            fg=color,
+            cursor="hand2" if "successfully uploaded" in msg else "",
+            font=('Arial', 8, 'underline') if "successfully uploaded" in msg else ('Arial', 8)
+        )
+        QRZ_status_label.unbind("<Button-1>")
+        if "successfully uploaded" in msg:
+            QRZ_status_label.bind("<Button-1>", lambda e, cs=callsign: open_qrz_link(e, cs))
+
 
     return response
 
@@ -3749,7 +3772,20 @@ def save_station_setup():
 ##
 #########################################################################################
 
-   
+def extract_core(callsign):
+    callsign = callsign.strip().upper()
+    parts = callsign.split('/')
+    if len(parts) == 3:
+        return parts[1]  # prefix/MainCallsign/suffix
+    elif len(parts) == 2:
+        # suffix = only letters (like /P of /M or /POTA)
+        if re.fullmatch(r'[A-Z]+', parts[1]):
+            return parts[0]
+        else:
+            return parts[1]
+    return callsign
+
+
 def get_session_key(username, password):
     encoded_username = urllib.parse.quote(username)
     encoded_password = urllib.parse.quote(password)
@@ -3769,9 +3805,113 @@ def get_session_key(username, password):
         return None, "❌ Connection QRZ XML Failed"
 
 
+def open_qrz_link(event, callsign):
+    url = f"https://www.qrz.com/db/{callsign}"
+    webbrowser.open_new_tab(url)
+
 
 def query_callsign(session_key, callsign):
+    import re
+    ns = {"qrz": "http://xmldata.qrz.com"}
+
     def do_query(cs):
+        print(f"[DEBUG] Querying QRZ for callsign: {cs}")
+        url = f"https://xmldata.qrz.com/xml/current/?s={session_key}&callsign={cs}"
+        try:
+            response = requests.get(url, timeout=5)
+            root = ET.fromstring(response.content)
+            return root.find(".//qrz:Callsign", ns)
+        except Exception as e:
+            print(f"Error fetching QRZ XML for {cs}:", e)
+            return None
+
+    # Stap 1: probeer originele callsign
+    callsign_element = do_query(callsign)
+
+    fallback_name = ""
+
+    if callsign_element is None:
+        base = extract_core(callsign)
+        if base != callsign:
+            fallback_element = do_query(base)
+            if fallback_element is not None:
+                # Gebruik alleen de naam uit fallback-element
+                full_name = f"{fallback_element.findtext('qrz:fname', '', ns)} {fallback_element.findtext('qrz:name', '', ns)}".strip()
+                QRZ_status_label.config(
+                    text=f"ℹ️ Fallback QRZ lookup: name from {base}",
+                    fg="orange",
+                    font=('Arial', 8, 'italic')
+                )
+                QRZ_status_label.unbind("<Button-1>")
+
+                return {
+                    "callsign": base,
+                    "name": full_name,
+                    "address": "",
+                    "city": "",
+                    "zipcode": "",
+                    "province": "",
+                    "country": "",
+                    "email": "",
+                    "grid": "",
+                    "cq_zone": "",
+                    "itu_zone": "",
+                    "qslmgr": "",
+                    "lat": "",
+                    "lon": "",
+                    "mapslink": "",
+                }
+
+
+        # Fallback werkte ook niet
+        clear_qrz_fields()
+        QRZ_status_label.config(text="⚠️ No Callsign found in QRZ XML.", fg="red")
+        return None
+
+
+    found_call = callsign_element.findtext("qrz:call", default="Unknown", namespaces=ns)
+
+    QRZ_status_label.config(
+        text=f"🔍 Found {found_call} in QRZ lookup.",
+        fg="blue",
+        cursor="hand2",
+        font=('Arial', 8, 'underline')
+    )
+    QRZ_status_label.unbind("<Button-1>")
+    QRZ_status_label.bind("<Button-1>", lambda e, cs=found_call: open_qrz_link(e, cs))
+
+    lat = callsign_element.findtext("qrz:lat", default="", namespaces=ns)
+    lon = callsign_element.findtext("qrz:lon", default="", namespaces=ns)
+    maps_link = f"https://www.google.com/maps?q={lat},{lon}" if lat and lon else ""
+
+    # Als we een fallback naam hebben, gebruik die (alleen voor naamveld)
+    full_name = f"{callsign_element.findtext('qrz:fname', '', ns)} {callsign_element.findtext('qrz:name', '', ns)}".strip()
+    if not full_name and fallback_name:
+        full_name = fallback_name
+
+    return {
+        "callsign": found_call,
+        "name": full_name,
+        "address": callsign_element.findtext("qrz:addr1", "", ns),
+        "city": callsign_element.findtext("qrz:addr2", "", ns),
+        "zipcode": callsign_element.findtext("qrz:zip", "", ns),
+        "province": callsign_element.findtext("qrz:state", "", ns),
+        "country": callsign_element.findtext("qrz:country", "", ns),
+        "email": callsign_element.findtext("qrz:email", "", ns),
+        "grid": callsign_element.findtext("qrz:grid", "", ns),
+        "cq_zone": callsign_element.findtext("qrz:cqzone", "", ns),
+        "itu_zone": callsign_element.findtext("qrz:ituzone", "", ns),
+        "qslmgr": callsign_element.findtext("qrz:qslmgr", "", ns),
+        "lat": lat,
+        "lon": lon,
+        "mapslink": maps_link,
+    }
+
+'''
+def query_callsign(session_key, callsign):
+
+    def do_query(cs):
+        print(f"[DEBUG] Querying QRZ for callsign: {cs}")
         url = f"https://xmldata.qrz.com/xml/current/?s={session_key}&callsign={cs}"
         try:
             response = requests.get(url, timeout=5)
@@ -3782,59 +3922,32 @@ def query_callsign(session_key, callsign):
             print(f"Error fetching QRZ XML for {cs}:", e)
             return None
 
-    # Probeer de originele callsign
-    callsign_element = do_query(callsign)
-
-    # Als niet gevonden en callsign bevat slashes, probeer variaties
-    if callsign_element is None and "/" in callsign:
-        parts = [p for p in callsign.split("/") if p]  # filter lege strings
-        tried = set()
-
-        # Probeer individuele delen
-        for part in sorted(parts, key=len, reverse=True):
-            if part not in tried:
-                callsign_element = do_query(part)
-                tried.add(part)
-                if callsign_element is not None:
-                    break
-
-        # Probeer combinaties van twee delen
-        if callsign_element is None and len(parts) >= 2:
-            for i in range(len(parts)):
-                for j in range(i + 1, len(parts)):
-                    combo = f"{parts[i]}/{parts[j]}"
-                    if combo not in tried:
-                        callsign_element = do_query(combo)
-                        tried.add(combo)
-                        if callsign_element is not None:
-                            break
-                if callsign_element is not None:
-                    break
-
-        # Probeer combinaties van drie delen
-        if callsign_element is None and len(parts) >= 3:
-            for i in range(len(parts)):
-                for j in range(i + 1, len(parts)):
-                    for k in range(j + 1, len(parts)):
-                        combo = f"{parts[i]}/{parts[j]}/{parts[k]}"
-                        if combo not in tried:
-                            callsign_element = do_query(combo)
-                            tried.add(combo)
-                            if callsign_element is not None:
-                                break
-                    if callsign_element is not None:
-                        break
-                if callsign_element is not None:
-                    break
+    # Try Original callsign
+    core_callsign = extract_core(callsign)
+    callsign_element = do_query(core_callsign)
 
     ns = {"qrz": "http://xmldata.qrz.com"}
 
     if callsign_element is None:
+        clear_qrz_fields()
         QRZ_status_label.config(text="⚠️ No Callsign found in QRZ XML.", fg="red")
         return None
 
     found_call = callsign_element.findtext("qrz:call", default="Unknown", namespaces=ns)
-    QRZ_status_label.config(text=f"🔍 Found {found_call} in QRZ lookup.", fg="blue")
+
+    if found_call.upper() not in callsign.upper():
+        clear_qrz_fields()
+        QRZ_status_label.config(text="⚠️ QRZ mismatch: result not related to input.", fg="red")
+        return None
+
+    QRZ_status_label.config(
+        text=f"🔍 Found {found_call} in QRZ lookup.",
+        fg="blue",
+        cursor="hand2",
+        font=('Arial', 8, 'underline')
+    )
+    QRZ_status_label.unbind("<Button-1>")
+    QRZ_status_label.bind("<Button-1>", lambda e, cs=found_call: open_qrz_link(e, cs))
 
     lat = callsign_element.findtext("qrz:lat", default="", namespaces=ns)
     lon = callsign_element.findtext("qrz:lon", default="", namespaces=ns)
@@ -3857,6 +3970,7 @@ def query_callsign(session_key, callsign):
         "lon": lon,
         "mapslink": maps_link,
     }
+'''
 
 
 def threaded_on_query():
@@ -3907,6 +4021,15 @@ def on_query_thread():
 
     root.after(0, update_gui)
 
+def clear_qrz_fields():
+    locator_var.set("")
+    name_var.set("")
+    city_var.set("")
+    address_var.set("")
+    zipcode_var.set("")
+    qsl_info_var.set("")
+    QRZ_status_label.config(text="❌ No data", fg="grey", cursor="")
+    QRZ_status_label.unbind("<Button-1>")
 
 
 
@@ -4145,8 +4268,8 @@ def haversine(lat1, lon1, lat2, lon2):
 
     return R * c
 
-def check_callsign_prefix(callsign, update_ui=True):
-    global dxcc_data  # must be loaded via parse_cty_file()
+def check_callsign_prefix(callsign, update_ui=True, skip_locator=False):
+    global dxcc_data
 
     callsign = callsign.strip().upper()
     best_match = None
@@ -4174,20 +4297,12 @@ def check_callsign_prefix(callsign, update_ui=True):
         distance_var_km = tk.StringVar()
         distance_var_miles = tk.StringVar()
 
-        # Retrieve your own coordinates via your own callsign
         my_call = my_callsign_var.get().strip().upper()
         my_lat, my_lon = find_coordinates_by_callsign(my_call)
 
-        # Calculate heading & distance
         if my_lat is not None and my_lon is not None:
             sp, lp = calculate_headings(my_lat, my_lon, lat, lon)
             heading_var.set(f"SP: {sp}°  /  LP: {lp}°")
-
-            if DEBUG:
-                print("FROM:", my_lat, my_lon)
-                print("TO  :", lat, lon)
-                print("Heading:", calculate_headings(my_lat, my_lon, lat, lon))
-
 
             distance_km = haversine(my_lat, my_lon, lat, lon)
             distance_miles = distance_km * 0.621371
@@ -4205,10 +4320,9 @@ def check_callsign_prefix(callsign, update_ui=True):
             distance_label.config(text=(f"{(distance_var_km.get())} / {(distance_var_miles.get())}"))
             dxcc_cq_itu_label.config(text=(f"CQ: {cq}, ITU: {itu}"))
 
-            # OVERSCHRIJF distance/heading indien locator ingevuld is
-            if locator_var.get().strip():
+            # Only calculate from locator if not skipping to avoid recursion
+            if not skip_locator and locator_var.get().strip():
                 calculate_from_locator()
-
 
     else:
         continent_var = ""
@@ -4223,17 +4337,25 @@ def check_callsign_prefix(callsign, update_ui=True):
 
 
 
+
 def calculate_from_locator():
     """
-    Berekent heading en afstand op basis van locator_var en my_locator_var.
+    Calculates heading and distance based on locator_var and my_locator_var.
+    If locator is too short (<4), falls back to prefix-based calculation.
     """
     loc = locator_var.get().strip().upper()
     my_loc = my_locator_var.get().strip().upper()
 
+    # Fallback when locator is too short
+    if len(loc) < 4:
+        if DEBUG:
+            print("[INFO] Locator too short (<4). Falling back to callsign prefix.")
+        check_callsign_prefix(callsign_var.get().strip().upper(), skip_locator=True)
+        return
+
     if not is_valid_locator(loc) or not is_valid_locator(my_loc):
         return
 
-    # Gebruik midden van de locator (centroid)
     def locator_to_latlon(locator):
         try:
             locator = locator.strip().upper()
@@ -4249,7 +4371,7 @@ def calculate_from_locator():
                 lon += (ord(locator[4]) - A) * 5 / 60
                 lat += (ord(locator[5]) - A) * 2.5 / 60
             else:
-                lon += 1  # center
+                lon += 1
                 lat += 0.5
             return lat, lon
         except Exception:

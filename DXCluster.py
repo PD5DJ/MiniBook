@@ -13,6 +13,10 @@
 #                           - cty.dat download added
 #                           - MODES catagories expanded
 #   01-06-2025  :   1.0.3   - UI layout changed, Exit button added
+#   07-06-2025  :   1.0.4   - Fixed focus when clicked on Send spot button
+#   22-06-2025  :   1.0.5   - Custom filter added, based of REGEX
+#                           - Users can now see theirselves in the tree when they are spotted. (green)
+#                           - Auto reconnect function added, when connection drops, app will try to reconnect every 5 seconds, when Auto Reconnect is enabled.
 #**********************************************************************************************************************************
 
 import asyncio
@@ -29,7 +33,7 @@ from datetime import datetime
 from cty_parser import parse_cty_file
 import requests
 
-VERSION_NUMBER = ("v1.0.3")
+VERSION_NUMBER = ("v1.0.5")
 
 INI_FILE        = "dxcluster.ini"
 CLUSTER_FILE    = "clusters.json"
@@ -152,7 +156,10 @@ MODES = {
 
 
 class DXClusterApp:
-    def __init__(self, root, rigctl_host="127.0.0.1", rigctl_port=4532, tracking_var=None, on_callsign_selected=None, get_worked_calls=None, get_worked_calls_today=None):
+    def __init__(self, root, rigctl_host="127.0.0.1", rigctl_port=4532,
+                 tracking_var=None, on_callsign_selected=None,
+                 get_worked_calls=None, get_worked_calls_today=None,
+                 get_last_qso_callsign=None, get_current_frequency=None):
         self.root = root
         self.root.title(f"DX Cluster Telnet Client - {VERSION_NUMBER}")
 
@@ -163,8 +170,18 @@ class DXClusterApp:
         self.on_callsign_selected = on_callsign_selected
         self.get_worked_calls = get_worked_calls
         self.get_worked_calls_today = get_worked_calls_today
+        self.get_last_qso_callsign = get_last_qso_callsign
+        self.get_current_frequency = get_current_frequency
+
+ 
+        self.custom_filters = self.load_custom_filters()
+
 
         # Telnet/async setup
+        self.reconnect_attempts = 0
+        self.user_callsign = ""
+        self.manual_disconnect = False
+
         self.connected = False
         self.writer = None
         self.loop = asyncio.new_event_loop()
@@ -212,14 +229,12 @@ class DXClusterApp:
 
 
     def setup_ui(self):
-# Top frame bevat beide subframes naast elkaar
         top_frame = tk.Frame(self.root)
         top_frame.pack(padx=10, pady=5, fill=tk.X)
 
         top_frame.columnconfigure(0, weight=1)
         top_frame.columnconfigure(1, weight=0)
 
-        # Spot Filters Frame (links, neemt beschikbare ruimte)
         filters_frame = tk.LabelFrame(top_frame, text="Spot Filters", relief="groove", bd=2)
         filters_frame.grid(row=0, column=0, padx=(0, 10), pady=(0, 10), sticky="nsew")
 
@@ -233,7 +248,7 @@ class DXClusterApp:
         self.band_menu.current(0)
         self.band_menu.bind("<<ComboboxSelected>>", lambda e: self.filter_spots())
 
-        tk.Label(filters_frame, text="Mode:").grid(row=0, column=2, sticky="e")
+        tk.Label(filters_frame, text="Type:").grid(row=0, column=2, sticky="e")
         self.mode_var = tk.StringVar()
         modes_with_all = ["ALL"] + list(MODES.keys())
         self.mode_menu = ttk.Combobox(filters_frame, textvariable=self.mode_var, values=modes_with_all, state="readonly", width=10)
@@ -243,21 +258,26 @@ class DXClusterApp:
         self.mode_menu.current(0)
         self.mode_menu.bind("<<ComboboxSelected>>", lambda e: self.filter_spots())
 
-        # Buttons Frame (rechts, met zelfde stijl en vaste breedte)
+        custom_keys = list(self.custom_filters.keys())
+        self.mode_menu["values"] = ["ALL"] + list(MODES.keys()) + custom_keys
+
+        tk.Button(filters_frame, text="⚙", width=2, command=self.manage_custom_filters).grid(row=0, column=4, padx=(0, 5))
+        tk.Button(filters_frame, text="?", width=2, command=self.show_regex_help).grid(row=0, column=5, padx=(0, 5))
+
+
         buttons_frame = tk.LabelFrame(top_frame, text="Actions", relief="groove", bd=2)
         buttons_frame.grid(row=0, column=1, padx=(0, 0), pady=(0, 10), sticky="nsew")
         top_frame.columnconfigure(1, weight=1)
 
-        buttons_frame.columnconfigure(0, weight=1)  # laat linker ruimte groeien
-        buttons_frame.columnconfigure(1, weight=0)  # knop blijft vaste breedte
-        buttons_frame.columnconfigure(2, weight=1)  # laat rechter ruimte groeien
+        buttons_frame.columnconfigure(0, weight=1)
+        buttons_frame.columnconfigure(1, weight=0)
+        buttons_frame.columnconfigure(2, weight=1)
 
-        # Zet Send Spot in het midden
-        tk.Label(buttons_frame).grid(row=0, column=0)  # lege linkerzijde
+        tk.Label(buttons_frame).grid(row=0, column=0)
         send_spot_btn = tk.Button(buttons_frame, text="Send Spot", command=self.open_send_spot_popup,
                                 fg="white", bg="green", width=12)
         send_spot_btn.grid(row=0, column=1, pady=5)
-        tk.Label(buttons_frame).grid(row=0, column=2)  # lege rechterzijde
+        tk.Label(buttons_frame).grid(row=0, column=2)
 
         style = ttk.Style(self.root)
         import tkinter.font as tkfont
@@ -311,14 +331,23 @@ class DXClusterApp:
         self.login_var = tk.StringVar()
         tk.Entry(conn_frame, textvariable=self.login_var, width=10).grid(row=1, column=1, sticky=tk.W, pady=(0, 5))
 
-        self.connect_button = tk.Button(conn_frame, text="Reconnect", command=self.reconnect)
+        self.connect_button = tk.Button(conn_frame, text="Connect", command=self.toggle_connection)
         self.connect_button.grid(row=0, column=2, rowspan=2, padx=10, sticky="w")
+
+        self.auto_reconnect_var = tk.BooleanVar()
+        self.auto_reconnect_var.set(self.load_ini_setting("AutoReconnect", "1") == "1")
+
+        self.auto_reconnect_checkbox = tk.Checkbutton(conn_frame, text="Auto reconnect", variable=self.auto_reconnect_var, command=self.save_auto_reconnect_setting)
+        self.auto_reconnect_checkbox.grid(row=0, column=3, rowspan=2, sticky="w", pady=(0, 5))
+
 
         last_used = self.load_last_used_cluster()
         if last_used:
             self.hostport_var.set(last_used)
 
-        self.root.after(100, self.reconnect)
+        if self.auto_reconnect_var.get():
+            self.manual_disconnect = False  # zorg dat reconnect bij opstart werkt
+            self.root.after(100, self.connect)
 
         self.tab_output = tk.Frame(self.notebook)
         self.notebook.add(self.tab_output, text="Console")
@@ -355,6 +384,7 @@ class DXClusterApp:
         self.tree.tag_configure('evenrow', background='#f0f0f0')
         self.tree.tag_configure('worked_today', background='#ffd9b3')
         self.tree.tag_configure('worked', background='#b3e6ff')
+        self.tree.tag_configure('owncall', background='#c6f5c6')  # Lichtgroen
 
         bottom_frame = tk.Frame(self.root)
         bottom_frame.pack(fill="x", padx=10, pady=(5, 10))
@@ -369,6 +399,10 @@ class DXClusterApp:
         worked_today_legend = tk.Label(legend_left, text="Worked today", bg="#ffd9b3", relief="ridge", borderwidth=1, width=15)
         worked_today_legend.pack(side="left", padx=5)
 
+        owncall_legend = tk.Label(legend_left, text="Self spot", bg="#c6f5c6", relief="ridge", borderwidth=1, width=15)
+        owncall_legend.pack(side="left", padx=5)
+
+
         # Rechter frame voor Exit-knop
         exit_right = tk.Frame(bottom_frame)
         exit_right.pack(side="right")
@@ -382,8 +416,73 @@ class DXClusterApp:
         self.tree.bind("<<TreeviewSelect>>", self.spot_clicked)
 
 
+    # Shows a little help windows how to use REGEX
+    def show_regex_help(self):
+        help_win = tk.Toplevel(self.root)
+        help_win.title("Regex Help")
+        self.center_window(help_win, 600, 400)
+
+        text = tk.Text(help_win, wrap="word")
+        text.pack(expand=True, fill="both", padx=10, pady=10)
+
+        help_content = """
+        REGEX FILTER GUIDE
+        --------------------------
+
+        EXAMPLES (CALLSIGNS):
+        ^I             — starts with 'I' (e.g. Italy: I0AAA)
+        ^DL            — starts with 'DL' (e.g. Germany: DL1ABC)
+        \\bREF\\b        — exact word 'REF' as a standalone word
+        ^F.*           — starts with 'F' (e.g. France: F4XYZ)
+        ^OH[0-9]       — Finnish station (OH + digit, e.g. OH2ZZ)
+        [A-Z]{1,2}[0-9]{1,2}[A-Z]{1,3}  — generic callsign format (e.g. PA3XYZ)
+        .*25.*         — contains '25' anywhere (e.g. LZ25AA)
+        [IU][0-9]      — starts with 'I' or 'U' followed by a digit
+        .*/P$          — ends with /P (portable station)
+        .*/MM$         — ends with /MM (maritime mobile)
+        ^EA[1-9]/      — Spanish prefix with slash (e.g. EA1/ON4ZZZ)
+        ^ON[0-9]{1}.*  — Belgian station with 1 digit (e.g. ON3AAA)
+        .*\\/.*         — contains a slash (e.g. PA3XYZ/P)
+        ^HB9           — Swiss station (e.g. HB9ABC)
+        ^JA[0-9]       — Japanese callsign (e.g. JA1XYZ)
+        ^ZS[1-6]       — South Africa (e.g. ZS6AAA)
+        ^VK[1-9]       — Australia (e.g. VK2ABC)
+        ^K[0-9]        — USA (e.g. K3LR, K9CT)
+        .*(\\bYL\\b|\\bOM\\b).*  — contains YL or OM as whole words
+        ^3D2.*         — Fiji Islands (e.g. 3D2XYZ)
+        ^(5Z|9J|9G)    — Kenya, Zambia or Ghana (multiple prefixes)
+
+        SYMBOLS
+        --------
+        ^    — start of line
+        $    — end of line
+        .    — any character
+        *    — zero or more times
+        +    — one or more times
+        []   — character set (e.g. [A-Z])
+        {}   — repeat count (e.g. {2} = exactly 2 times)
+        \\b   — word boundary
+        |    — OR (e.g. PA|PD)
+
+        NOTES
+        ------
+        [A-Z]{1,2}[0-9]{1,2}[A-Z]{1,3}
+        Matches most standard callsign formats:
+        - 1–2 letters, 1–2 digits, 1–3 letters
+        - Examples: PA3XYZ, ON4ZZ, DL1A, K9AA
+
+        Use https://regex101.com to test your expressions.
+        """
+
+        text.insert("1.0", help_content)
+        text.config(state="disabled", font=("Courier New", 10))
+
+        tk.Button(help_win, text="Close", command=help_win.destroy).pack(pady=5)
 
 
+
+
+    # Function to check if cty.dat file is present in the root folder
     def check_ctydat_file(self):
         try:
             if not os.path.exists(DXCC_FILE):
@@ -398,7 +497,7 @@ class DXClusterApp:
                                 parent=self.root)
             self.dxcc_data = {}
 
-
+    # Function to download cty.dat file
     def download_ctydat_file(self):
         try:
             response = requests.get(ctydat_url)
@@ -417,11 +516,27 @@ class DXClusterApp:
 
 
 
-
+    # Opens Send Spot window
     def open_send_spot_popup(self):
-        popup = SendSpotPopup(self.root, self)
+        default_dx = ""
+        default_freq = ""
+
+        # Tries to retrieve callsign and frequency from MiniBook
+        if callable(self.get_last_qso_callsign):
+            default_dx = self.get_last_qso_callsign() or ""
+        if callable(self.get_current_frequency):
+            freq_raw = self.get_current_frequency() or ""
+            try:
+                freq_khz = str(int(float(freq_raw) * 1000))
+            except:
+                freq_khz = ""
+            default_freq = freq_khz
+
+        popup = SendSpotPopup(self.root, self, default_dx, default_freq)
         self.root.wait_window(popup)
 
+
+    # Sends spot to Telnet cluster server
     def send_spot(self, dx, freq, remark):
         if self.writer is None:
             self.show_centered_message("Error", "Not connected to Telnet server!", icon="error")
@@ -481,11 +596,27 @@ class DXClusterApp:
             self.writer.write(message.encode())
             await self.writer.drain()
 
+    # Auto reconnect setting
+    def save_auto_reconnect_setting(self):
+        self.safe_write_to_ini("Settings", {
+            "AutoReconnect": "1" if self.auto_reconnect_var.get() else "0"
+        })
 
 
+    # Loads Settings from ini file
+    def load_ini_setting(self, key, default=""):
+        config = configparser.ConfigParser()
+        config.optionxform = str
+        if os.path.exists(INI_FILE):
+            config.read(INI_FILE)
+            return config.get("Settings", key, fallback=default)
+        return default
+
+    
     def reconnect(self):
         if self.connected:
-            self.disconnect()
+            return  # Al verbonden
+        self.manual_disconnect = False  # reconnect poging toegestaan
         self.connect()
 
 ########
@@ -582,12 +713,15 @@ class DXClusterApp:
             values = self.tree.item(item, "values")
             dx_call = values[2].upper()
 
-            if dx_call in worked_calls_today:
+            callmatch = re.fullmatch(rf"(?i)(.*[/])?{re.escape(self.user_callsign)}([/].*)?", dx_call)
+            if callmatch:
+                tag = 'owncall'
+            elif dx_call in worked_calls_today:
                 tag = 'worked_today'
             elif dx_call in current_worked_calls:
                 tag = 'worked'
             else:
-                tag = 'evenrow' if i % 2 == 0 else 'oddrow'
+                tag = ''
 
             self.tree.item(item, tags=(tag,))
 
@@ -650,28 +784,21 @@ class DXClusterApp:
 
 
 
-
+    # Last used cluster storage
     def save_last_used_cluster(self, host, port, login):
-        import configparser
-        config = configparser.ConfigParser()
-        config["LAST"] = {
+        self.safe_write_to_ini("LAST", {
             "host": host,
             "port": str(port)
-        }
-        config["LOGIN"] = {
+        })
+        self.safe_write_to_ini("LOGIN", {
             "user": login
-        }
-        with open(INI_FILE, "w", encoding="utf-8") as f:
-            config.write(f)
+        })
 
 
-
-
-
-
-
+    # Last used cluster retrieval
     def load_last_used_cluster(self):
         config = configparser.ConfigParser()
+        config.optionxform = str
         if not os.path.exists(INI_FILE):
             return None
         config.read(INI_FILE, encoding="utf-8")
@@ -731,8 +858,13 @@ class DXClusterApp:
 
 
     def connect(self):
+        if self.connected:
+            return  # Vermijd dubbele connecties
+
+        self.manual_disconnect = False  # reset bij expliciete connect
         hostport = self.hostport_var.get()
         login = self.login_var.get()
+        self.user_callsign = login.strip().upper()
 
         if ':' not in hostport:
             messagebox.showerror("Error", "Host:Port must be in format hostname:port")
@@ -749,74 +881,96 @@ class DXClusterApp:
         self.output.see(tk.END)
 
         future = asyncio.run_coroutine_threadsafe(self.telnet_client(host, port, login), self.loop)
-
         self.save_last_used_cluster(host, port, login)
-
-        self.connected = True
         self.connect_button.config(text="Disconnect")
 
 
-
-
     def disconnect(self):
-        self.output.insert(tk.END, "Disconnect requested.\n")
+        self.output.insert(tk.END, "[DEBUG] Disconnect called.\n")
+        self.output.insert(tk.END, f"[DEBUG] connected={self.connected}, writer={self.writer is not None}, manual_disconnect={self.manual_disconnect}, auto_reconnect={self.auto_reconnect_var.get()}\n")
         self.output.see(tk.END)
+
+        self.manual_disconnect = True
 
         if self.writer:
             self.writer.close()
             asyncio.run_coroutine_threadsafe(self.writer.wait_closed(), self.loop)
 
-            self.writer = None
-
+        self.writer = None
         self.connected = False
         self.connect_button.config(text="Connect")
+
+        self.auto_reconnect_var.set(False)
+        self.auto_reconnect_checkbox.update()
+        self.save_auto_reconnect_setting()
+        self.output.insert(tk.END, "[INFO] Auto-reconnect disabled due to manual disconnect.\n")
+        self.output.see(tk.END)
+
+
+
+       
+
+
+
 
 
 
 
     async def telnet_client(self, host, port, login):
-        try:
-            reader, writer = await asyncio.open_connection(host, port)
-            self.writer = writer
-            self.output.insert(tk.END, f"Connected to {host}:{port}\n")
-            self.output.see(tk.END)
+        self.reconnect_attempts = 0
 
-            # Wait for login prompt
-            prompt = await reader.readuntil(b"login:")
-            self.output.insert(tk.END, prompt.decode(errors="ignore"))
-            self.output.see(tk.END)
-
-            # Send login
-            writer.write((login + "\n").encode())
-            await writer.drain()
-
-            # Send SH/DX direct after login
-            writer.write(b"SH/DX\n")
-            await writer.drain()
-
-            # Process incoming lines
-            while True:
-                line = await reader.readline()
-                if not line:
-                    break
-                decoded = line.decode(errors="ignore").strip()
-                if decoded:
-                    self.output.insert(tk.END, decoded + "\n")
-                    self.output.see(tk.END)
-                    self.parse_spot(decoded)
-        except Exception as e:
+        while True:
             try:
-                self.output.insert(tk.END, f"Error: {e}\n")
+                reader, writer = await asyncio.open_connection(host, port)
+                self.writer = writer
+                self.output.insert(tk.END, f"✅ Connected to {host}:{port}\n")
                 self.output.see(tk.END)
-            except tk.TclError:
-                pass
-        finally:
-            self.connected = False
-            try:
+
+                prompt = await reader.readuntil(b"login:")
+                self.output.insert(tk.END, prompt.decode(errors="ignore"))
+                self.output.see(tk.END)
+
+                writer.write((login + "\n").encode())
+                await writer.drain()
+
+                writer.write(b"SH/DX\n")
+                await writer.drain()
+
+                self.connected = True
+                self.reconnect_attempts = 0
+                if self.connect_button.winfo_exists():
+                    self.connect_button.config(text="Disconnect")
+
+                while True:
+                    line = await reader.readline()
+                    if not line:
+                        raise ConnectionResetError("Connection closed by remote host")
+
+                    decoded = line.decode(errors="ignore").strip()
+                    if decoded:
+                        self.output.insert(tk.END, decoded + "\n")
+                        self.output.see(tk.END)
+                        self.parse_spot(decoded)
+
+            except Exception as e:
+                self.connected = False
+                self.writer = None
+                self.output.insert(tk.END, f"❌ Connection error: {e}\n")
+                self.output.see(tk.END)
                 if self.connect_button.winfo_exists():
                     self.connect_button.config(text="Connect")
-            except tk.TclError:
-                pass
+
+            if self.manual_disconnect or not self.auto_reconnect_var.get():
+                self.output.insert(tk.END, "🔌 Auto-reconnect is off or manually disconnected. Staying disconnected.\n")
+                self.output.see(tk.END)
+                break
+
+            self.reconnect_attempts += 1
+            self.output.insert(tk.END, f"🔁 Reconnect attempt {self.reconnect_attempts} in 5 seconds...\n")
+            self.output.see(tk.END)
+            await asyncio.sleep(5)
+
+
 
 
 
@@ -999,12 +1153,17 @@ class DXClusterApp:
         except (ValueError, TypeError):
             freq_str = spot['freq']
 
-        if dx_call in worked_calls_today:
+        callmatch = re.fullmatch(rf"(?i)(.*[/])?{re.escape(self.user_callsign)}([/].*)?", dx_call)
+        if callmatch:
+            tag = 'owncall'
+        elif dx_call in worked_calls_today:
             tag = 'worked_today'
         elif dx_call in current_worked_calls:
             tag = 'worked'
         else:
             tag = ''
+
+
 
         self.tree.insert(
             "", 0,
@@ -1114,29 +1273,45 @@ class DXClusterApp:
 
 
     def save_window_position(self, x, y):
-        config = configparser.ConfigParser()
-        if os.path.exists(INI_FILE):
-            config.read(INI_FILE, encoding="utf-8")
-        if "WINDOW" not in config:
-            config["WINDOW"] = {}
-        config["WINDOW"]["x"] = str(x)
-        config["WINDOW"]["y"] = str(y)
-        with open(INI_FILE, "w", encoding="utf-8") as f:
-            config.write(f)
+        self.safe_write_to_ini("WINDOW", {
+            "x": str(x),
+            "y": str(y)
+        })
+
 
     def restore_window_position(self):
+        print("[DEBUG] Attempting to restore window position...")
         config = configparser.ConfigParser()
+        config.optionxform = str
+
         if not os.path.exists(INI_FILE):
+            print(f"[DEBUG] INI file '{INI_FILE}' does not exist. Aborting restore.")
             return
-        config.read(INI_FILE, encoding="utf-8")
+
+        print(f"[DEBUG] INI file '{INI_FILE}' found. Reading contents...")
         try:
-            x = int(config["WINDOW"].get("x", "100"))
-            y = int(config["WINDOW"].get("y", "100"))
+            config.read(INI_FILE, encoding="utf-8")
+            print("[DEBUG] INI file successfully read.")
+
+            if "WINDOW" not in config:
+                print("[DEBUG] Section [WINDOW] not found in INI file.")
+                return
+
+            x_str = config["WINDOW"].get("x", "100")
+            y_str = config["WINDOW"].get("y", "100")
+            print(f"[DEBUG] Retrieved position strings: x='{x_str}', y='{y_str}'")
+
+            x = int(x_str)
+            y = int(y_str)
+            print(f"[DEBUG] Parsed position: x={x}, y={y}")
+
             self.root.geometry(f"+{x}+{y}")
+            print(f"[DEBUG] Window position restored to: x={x}, y={y}")
+
         except Exception as e:
-            print(f"Error restoring window position: {e}")
+            print(f"[ERROR] Failed to restore window position: {e}")
 
-
+        
 
 
     async def disconnect_async(self):
@@ -1200,9 +1375,201 @@ class DXClusterApp:
             except Exception:
                 pass
 
+# Spot Custom Filter Functions
+    def center_window(self, win, width, height):
+        self.root.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - width) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - height) // 2
+        win.geometry(f"{width}x{height}+{x}+{y}")
+    def load_custom_filters(self):
+        config = configparser.ConfigParser()
+        config.optionxform = str
+        if os.path.exists(INI_FILE):
+            config.read(INI_FILE)
+            if "CustomFilters" in config:
+                return {k: v for k, v in config["CustomFilters"].items()}
+        return {}
+
+    def save_custom_filters(self):
+        config = configparser.ConfigParser()
+        config.optionxform = str
+
+        if os.path.exists(INI_FILE):
+            config.read(INI_FILE, encoding="utf-8")
+
+        # Verwijder CustomFilters sectie als deze bestaat
+        if "CustomFilters" in config:
+            del config["CustomFilters"]
+
+        # Herstel alleen als er nog filters zijn
+        if self.custom_filters:
+            config["CustomFilters"] = {}
+            for k, v in self.custom_filters.items():
+                config["CustomFilters"][k] = v
+
+        with open(INI_FILE, "w", encoding="utf-8") as f:
+            config.write(f)
+            self.safe_write_to_ini("CustomFilters", self.custom_filters)
+
+
+
+
+    def update_mode_combobox(self):
+        custom_keys = list(self.custom_filters.keys())
+        self.mode_menu["values"] = ["ALL"] + list(MODES.keys()) + custom_keys
+
+    def manage_custom_filters(self):
+        win = tk.Toplevel(self.root)
+        win.title("Custom Filters")
+
+        # Center the window
+        self.center_window(win, 400, 300)
+
+        listbox = tk.Listbox(win)
+        listbox.pack(fill="both", expand=True, padx=10, pady=5)
+
+        for name in self.custom_filters:
+            listbox.insert("end", name)
+
+        def add_filter():
+            def refresh_and_close():
+                listbox.delete(0, tk.END)
+                for name in self.custom_filters:
+                    listbox.insert("end", name)
+            self.edit_filter_dialog(callback=refresh_and_close)
+
+        def edit_selected():
+            def refresh_and_close():
+                listbox.delete(0, tk.END)
+                for name in self.custom_filters:
+                    listbox.insert("end", name)
+            selected = listbox.curselection()
+            if selected:
+                name = listbox.get(selected[0])
+                pattern = self.custom_filters[name]
+                self.edit_filter_dialog(name, pattern, callback=refresh_and_close)
+
+        def delete_selected():
+            selected = listbox.curselection()
+            if selected:
+                name = listbox.get(selected[0])
+                if messagebox.askyesno("Delete", f"Delete filter '{name}'?"):
+                    del self.custom_filters[name]
+                    self.save_custom_filters()
+                    listbox.delete(selected[0])
+                    self.update_mode_combobox()
+
+
+        btn_frame = tk.Frame(win)
+        btn_frame.pack(pady=5)
+
+        close_btn = tk.Button(win, text="Close", command=win.destroy)
+        close_btn.pack(pady=(0, 10))
+
+        tk.Button(btn_frame, text="➕ Add", command=add_filter).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="✏️ Edit", command=edit_selected).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="❌ Delete", command=delete_selected).pack(side="left", padx=5)
+
+    def edit_filter_dialog(self, name="", pattern="", callback=None):
+        old_name = name
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Edit Filter" if name else "Add Filter")
+
+        # Center the window
+        self.center_window(dialog, 300, 140)
+
+        tk.Label(dialog, text="Name:").grid(row=0, column=0)
+        name_var = tk.StringVar(value=name)
+        tk.Entry(dialog, textvariable=name_var).grid(row=0, column=1)
+
+        tk.Label(dialog, text="Regex:").grid(row=1, column=0)
+        pattern_var = tk.StringVar(value=pattern)
+        tk.Entry(dialog, textvariable=pattern_var).grid(row=1, column=1)
+
+        def save():
+            name = name_var.get().strip()
+            pattern = pattern_var.get().strip()
+            if not name or not pattern:
+                messagebox.showerror("Error", "Name and Regex required")
+                return
+            try:
+                re.compile(pattern)
+            except re.error:
+                messagebox.showerror("Error", "Invalid regex")
+                return
+            if name != old_name and old_name in self.custom_filters:
+                del self.custom_filters[old_name]
+            self.custom_filters[name] = pattern
+            self.save_custom_filters()
+            self.update_mode_combobox()
+            dialog.destroy()
+            if callback:
+                callback()
+
+        tk.Button(dialog, text="Save", command=save).grid(row=2, column=0, padx=5, pady=5)
+        tk.Button(dialog, text="Close", command=dialog.destroy).grid(row=2, column=1, padx=5, pady=5)
+
+# Aanpassen van spot_matches_filters():
+    def spot_matches_filters(self, spot):
+        band = self.band_var.get()
+        mode = self.mode_var.get()
+
+        try:
+            freq_mhz = float(spot["freq"])
+        except (ValueError, TypeError):
+            return False
+
+        if band != "ALL":
+            low, high = BANDS.get(band, (0, float("inf")))
+            if not (low <= freq_mhz <= high):
+                return False
+
+        if mode != "ALL":
+            if mode in MODES:
+                for low, high in MODES[mode]:
+                    if low <= freq_mhz <= high:
+                        return True
+                return False
+            elif mode in self.custom_filters:
+                pattern = self.custom_filters[mode]
+                spot_text = f"{spot.get('dx','')} {spot.get('comment','')} {spot.get('spotter','')}"
+                return re.search(pattern, spot_text, re.IGNORECASE) is not None
+            else:
+                return False
+
+        return True
+
+
+
+
+    def safe_write_to_ini(self, section, keyvals):
+        """
+        Veilige write naar INI bestand zonder andere secties of hoofdletters te verliezen.
+        - section: naam van de INI sectie (string)
+        - keyvals: dict met key/values die je wilt instellen in die sectie
+        """
+        config = configparser.ConfigParser()
+        config.optionxform = str
+
+        if os.path.exists(INI_FILE):
+            config.read(INI_FILE, encoding="utf-8")
+
+        if section not in config:
+            config[section] = {}
+
+        config[section].update(keyvals)
+
+        with open(INI_FILE, "w", encoding="utf-8") as f:
+            config.write(f)
+
+
+
+
+
+
 
 class SendSpotPopup(tk.Toplevel):
-    def __init__(self, parent, app):
+    def __init__(self, parent, app, default_dx="", default_freq=""):
         super().__init__(parent)
         self.app = app
         self.title("Send Spot")
@@ -1239,6 +1606,9 @@ class SendSpotPopup(tk.Toplevel):
         self.remark_entry = tk.Entry(entry_frame)
         self.remark_entry.grid(row=2, column=1, padx=5, pady=5)
 
+        self.entry_dx.insert(0, default_dx)
+        self.freq_entry.insert(0, default_freq)        
+
         button_frame = tk.Frame(self)
         button_frame.pack(pady=(0, 10))
 
@@ -1247,6 +1617,20 @@ class SendSpotPopup(tk.Toplevel):
 
         cancel_btn = tk.Button(button_frame, text="Cancel", command=self.destroy, width=10, bg="lightgrey", fg="black")
         cancel_btn.pack(side="left", padx=10)
+        
+        # Breng popup naar voren en forceer focus
+        self.lift()
+        self.grab_set()
+        self.focus_force()
+
+        # ENTER = Send Spot
+        self.bind("<Return>", lambda event: self.send_spot())
+
+        # ESC = Annuleer (optioneel, als je dit ook wilt)
+        self.bind("<Escape>", lambda event: self.destroy())
+
+        # Focus automatisch op eerste invoerveld
+        self.entry_dx.focus_set()        
 
     def send_spot(self):
         dx = self.entry_dx.get().strip()
@@ -1294,8 +1678,13 @@ def launch_dx_spot_viewer(
     on_callsign_selected=None,
     get_worked_calls=None,
     get_worked_calls_today=None,
-    parent_window=None
+    get_last_qso_callsign=None,
+    get_current_frequency=None,
+    parent_window=None,
 ):
+
+
+
     if parent_window is None:
         parent_window = tk.Toplevel()
         parent_window.resizable(True, True)
@@ -1307,5 +1696,7 @@ def launch_dx_spot_viewer(
         tracking_var,
         on_callsign_selected,
         get_worked_calls,
-        get_worked_calls_today
+        get_worked_calls_today,
+        get_last_qso_callsign,
+        get_current_frequency
     )
