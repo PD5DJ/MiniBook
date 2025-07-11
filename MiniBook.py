@@ -1,6 +1,6 @@
 #**********************************************************************************************************************************
 # File          :   MiniBook.py
-# Project       :   A Simple JSON Based logbook for portable use.
+# Project       :   A JSON Based logbook for portable use.
 # Description   :   Logs basic contact information to json
 # Date          :   18-10-2024
 # Authors       :   Bjorn Pasteuning - PD5DJ
@@ -107,6 +107,7 @@
 #                             For example: if VK/PD5DJ is not found, it will use names from PD5DJ only.
 #                           - Also when callsign retrieves no qrz data, fields are wiped also.
 #                           - Heading and Distance calculation improved
+# 05-07-2025    :   1.4.2   - ADIF import is now be processed threaded
 #**********************************************************************************************************************************
 
 from datetime import datetime, timedelta, date
@@ -139,7 +140,7 @@ import traceback
 # ------- Set True if you want to print system wide debug information -------
 DEBUG               = False
 
-VERSION_NUMBER = ("v1.4.0")
+VERSION_NUMBER = ("v1.4.2")
 
 # Configuration file path
 DATA_FOLDER         = Path.cwd()
@@ -373,6 +374,38 @@ def on_mode_change(event=None):
         rst_sent_var.set(rst_options[8])
         rst_received_var.set(rst_options[8])
 
+
+def download_satellites():
+    try:
+        urls = [
+            "https://celestrak.org/NORAD/elements/amateur.txt",
+            "https://celestrak.org/NORAD/elements/cubesat.txt"
+        ]
+        satellite_names = []
+        for url in urls:
+            response = requests.get(url)
+            tle_data = response.text
+            lines = tle_data.strip().splitlines()
+
+            for i in range(0, len(lines), 3):
+                if i + 2 >= len(lines):
+                    continue
+                name_line = lines[i].strip()
+                if "(" in name_line and ")" in name_line:
+                    name = name_line.split("(")[-1].split(")")[0].strip()
+                else:
+                    name = name_line.strip()
+                satellite_names.append(name)
+
+        satellite_names = sorted(set(satellite_names))
+
+        with open("satellites.txt", "w") as f:
+            for name in satellite_names:
+                f.write(name + "\n")
+
+        messagebox.showinfo("Success", "Satellites downloaded successfully.")
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to download satellites:\n{e}")
 
 
 def load_satellite_names(filename=SAT_FILE):
@@ -1240,7 +1273,8 @@ def view_logbook():
 
 
     # Bind the right-click event to show the context menu
-    tree.bind("<Button-3>", show_context_menu)
+    tree.bind("<Button-2>" if platform.system() == "Darwin" else "<Button-3>", show_context_menu)
+
     # Bind double-left click event to show edit window
     tree.bind("<Double-1>", edit_qso)
 
@@ -1536,8 +1570,13 @@ def open_bulk_edit_window():
     logbook_w = Logbook_Window.winfo_width()
     logbook_h = Logbook_Window.winfo_height()
 
-    win_w = 350
-    win_h = 180
+    if platform.system() == "Darwin":
+        win_w = 400
+        win_h = 200
+    else:
+        win_w = 250
+        win_h = 180
+
     pos_x = logbook_x + (logbook_w // 2) - (win_w // 2)
     pos_y = logbook_y + (logbook_h // 2) - (win_h // 2)
 
@@ -1622,8 +1661,8 @@ def open_bulk_edit_window():
 
     btn_frame = tk.Frame(edit_window)
     btn_frame.pack(pady=10)
-    tk.Button(btn_frame, text="Cancel", command=edit_window.destroy, width=10).pack(side="left", padx=10)
-    tk.Button(btn_frame, text="Save", command=apply_bulk_edit, width=10).pack(side="right", padx=10)
+    tk.Button(btn_frame, text="Save", command=apply_bulk_edit, width=10).pack(side="left", padx=10)
+    tk.Button(btn_frame, text="Cancel", command=edit_window.destroy, width=10).pack(side="right", padx=10)
 
 
 
@@ -1763,13 +1802,14 @@ def edit_qso(event):
     Edit_Window.title("Edit QSO Entry")
     Edit_Window.resizable(False, False)
 
+    # Positionering
     Logbook_Window.update_idletasks()
     logbook_x = Logbook_Window.winfo_x()
     logbook_y = Logbook_Window.winfo_y()
     logbook_width = Logbook_Window.winfo_width()
     logbook_height = Logbook_Window.winfo_height()
     edit_width = 550
-    edit_height = 420
+    edit_height = 480 if platform.system() == "Darwin" else 420
     edit_x = logbook_x + (logbook_width - edit_width) // 2
     edit_y = logbook_y + (logbook_height - edit_height) // 2
     Edit_Window.geometry(f"{edit_width}x{edit_height}+{edit_x}+{edit_y}")
@@ -1816,12 +1856,7 @@ def edit_qso(event):
             entry.set(original_qso.get(field, ''))
 
         else:
-            if field in ['WWFF', 'My WWFF']:
-                var = tk.StringVar()
-                var.set(original_qso.get(field, ''))
-                var.trace_add("write", lambda *args, v=var: v.set(v.get().upper()))
-                entry = tk.Entry(form_frame, textvariable=var)
-            elif field in ['POTA', 'My POTA']:
+            if field in ['WWFF', 'My WWFF', 'POTA', 'My POTA']:
                 var = tk.StringVar()
                 var.set(original_qso.get(field, ''))
                 var.trace_add("write", lambda *args, v=var: v.set(v.get().upper()))
@@ -1832,6 +1867,10 @@ def edit_qso(event):
 
         entry.grid(row=row, column=col * 2 + 1, padx=5, pady=5, sticky='w')
         entries[field] = entry
+
+    # ─────────────── Buttons onderaan ───────────────
+    button_frame = tk.Frame(Edit_Window)
+    button_frame.pack(pady=10)
 
     def close_edit_window():
         global Edit_Window
@@ -1849,59 +1888,41 @@ def edit_qso(event):
         original_qso['Submode'] = entries['Submode'].get().strip().upper()
         original_qso['Band'] = entries['Band'].get().strip().lower()
 
-        locator1 = original_qso['Locator'].strip()
-        locator2 = original_qso['My Locator'].strip()
+        locator1 = original_qso['Locator']
+        locator2 = original_qso['My Locator']
 
         if not is_valid_locator(locator1) or not is_valid_locator(locator2):
             messagebox.showerror("Invalid Locator", "The Maidenhead locator must be at least 4 characters and valid.\nExample: FN31 or FN31TK")
             return
 
+        # Validatie datum en tijd
         date_str = entries['Date'].get().strip()
         time_str = entries['Time'].get().strip()
-
         try:
             datetime.strptime(date_str, '%Y-%m-%d')
         except ValueError:
-            messagebox.showerror("Invalid Date Format", "Date must be in the format: YYYY-MM-DD")
+            messagebox.showerror("Invalid Date", "Date must be in format YYYY-MM-DD.")
             return
-
         try:
-            datetime.strptime(time_str, '%H:%M:%S')
+            datetime.strptime(time_str, '%H:%M')
         except ValueError:
-            messagebox.showerror("Invalid Time Format", "Time must be in the format: HH:MM:SS")
+            messagebox.showerror("Invalid Time", "Time must be in format HH:MM.")
             return
 
         for field in fields:
-            if field not in ['Callsign', 'Mode', 'Band', 'Submode', 'Locator', 'My Locator', 'My Callsign']:
+            if field not in original_qso:
+                original_qso[field] = ""
+            if field not in ['Date', 'Time', 'Callsign', 'Locator', 'My Locator', 'My Callsign', 'My Operator', 'Mode', 'Submode', 'Band']:
                 original_qso[field] = entries[field].get().strip()
-
-        original_qso['DateTime'] = datetime.strptime(f"{date_str} {time_str}", '%Y-%m-%d %H:%M:%S')
 
         save_to_json()
         load_json_content()
+        update_worked_before_tree()
         close_edit_window()
 
-    def delete_qso():
-        if messagebox.askyesno("Delete Confirmation", "Are you sure you want to delete this QSO?"):
-            global qso_lines
-            qso_lines = [qso for qso in qso_lines if qso != original_qso]
-            save_to_json()
-            load_json_content()
-            close_edit_window()
-
-    button_frame = tk.Frame(Edit_Window)
-    button_frame.pack(pady=10)
-
-    save_button = tk.Button(button_frame, text="Save", command=save_changes, width=10)
-    save_button.pack(side='left', padx=10)
-
-    delete_button = tk.Button(button_frame, text="Delete", command=delete_qso, width=10)
-    delete_button.pack(side='left', padx=10)
-
-    close_button = tk.Button(button_frame, text="Close", command=close_edit_window, width=10)
-    close_button.pack(side='left', padx=10)
-
-    Edit_Window.protocol("WM_DELETE_WINDOW", close_edit_window)
+    # Buttons
+    tk.Button(button_frame, text="Cancel", width=10, command=close_edit_window).pack(side="left", padx=10)
+    tk.Button(button_frame, text="Save", width=10, command=save_changes).pack(side="right", padx=10)
 
 
 
@@ -1969,37 +1990,11 @@ def import_adif():
         messagebox.showerror("Error", "No logbook file loaded. Please load a logbook before importing.")
         return
 
-    # Select ADIF file
     adif_file = filedialog.askopenfilename(title="Select ADIF File", filetypes=[("ADIF files", "*.adi"), ("All files", "*.*")])
     if not adif_file:
         return
 
-    # Load JSON logbook data
-    try:
-        with open(current_json_file, "r", encoding="utf-8") as json_file:
-            logbook_data = json.load(json_file)
-    except FileNotFoundError:
-        messagebox.showerror("Error", "Logbook file not found.")
-        return
-    except json.JSONDecodeError:
-        messagebox.showerror("Error", "Logbook file is not valid JSON.")
-        return
-
-    # Load ADIF content
-    try:
-        with open(adif_file, "r", encoding="utf-8") as f:
-            content = f.read()
-    except UnicodeDecodeError:
-        try:
-            with open(adif_file, "r", encoding="latin-1") as f:
-                content = f.read()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load ADIF file: {e}")
-            return
-
-    qso_records = re.split(r'<eor>', content, flags=re.IGNORECASE)
-
-    # Setup progress window
+    # Create progress window
     progress_window = tk.Toplevel(root)
     progress_window.title("Importing ADIF")
     progress_window.geometry("400x100")
@@ -2009,110 +2004,140 @@ def import_adif():
     progress_counter.pack()
     progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
     progress.pack(pady=5)
-    total_qso_count = len(qso_records)
-    progress["maximum"] = total_qso_count
 
-    new_entries = []
-    duplicates = []
-
-    for i, record in enumerate(qso_records, 1):
-        if not record.strip():
-            continue
-
-        sig = extract_field(record, "sig").upper()
-        sig_info = extract_field(record, "sig_info")
-        wwff = sig_info if sig == "WWFF" else ""
-        pota = sig_info if sig == "POTA" else ""
-
-        entry = {
-            "Date": import_format_date(extract_field(record, "qso_date")) or "",
-            "Time": import_format_time(extract_field(record, "time_on")) or "",
-            "Callsign": (extract_field(record, "call") or "").upper(),
-            "Name": (extract_field(record, "name") or ""),
-            "My Callsign": (extract_field(record, "station_callsign") or "").upper(),
-            "My Operator": (extract_field(record, "operator") or "").upper(),
-            "My Locator": ("").upper(),
-            "My Location": ("").upper(),
-            "My WWFF": ("").upper(),
-            "My POTA": ("").upper(),
-            "Country": extract_field(record, "country") or "",
-            "Continent": (extract_field(record, "cont") or "").upper(),
-            "Sent": extract_field(record, "rst_sent") or "",
-            "Received": extract_field(record, "rst_rcvd") or "",
-            "Mode": extract_field(record, "mode") or "",
-            "Submode": extract_field(record, "submode") or "",
-            "Band": (extract_field(record, "band") or "").lower(),
-            "Frequency": extract_field(record, "freq") or "",
-            "Locator": (extract_field(record, "gridsquare") or "").upper(),
-            "Comment": extract_field(record, "comment") or "",
-            "WWFF": wwff,
-            "POTA": pota,
-            "Satellite": extract_field(record, "sat_name") or ""
-        }
-
-        if extract_field(record, "my_sig") == "POTA":
-            entry["My POTA"] = extract_field(record, "my_sig_info") or ""
-
-        callsign = entry["Callsign"]
-        check_callsign_prefix(callsign, False)
-        if country_var:
-            entry["Country"] = country_var
-        if continent_var:
-            entry["Continent"] = continent_var
-
-        if entry["Callsign"]:
-            is_duplicate = any(
-                existing_entry["Callsign"] == entry["Callsign"] and
-                existing_entry["Date"] == entry["Date"] and
-                existing_entry["Time"] == entry["Time"]
-                for existing_entry in logbook_data["Logbook"]
-            )
-            if is_duplicate:
-                duplicates.append(entry)
-            else:
-                new_entries.append(entry)
-
-        # Update progress UI
-        progress["value"] = i
-        progress_counter.config(text=f"{total_qso_count - i} QSO(s) remaining...")
-        progress_window.update_idletasks()
-
-    progress_window.destroy()
-
-    added_count = len(new_entries)
-    if duplicates:
-        duplicate_count = len(duplicates)
-        action = custom_duplicate_dialog(parent=root, total_count=total_qso_count, duplicate_count=duplicate_count, added_count=added_count)
-
-        if action is None:
+    def do_import():
+        try:
+            with open(current_json_file, "r", encoding="utf-8") as json_file:
+                logbook_data = json.load(json_file)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load logbook: {e}")
+            progress_window.destroy()
             return
-        elif action == "Overwrite":
-            for duplicate_entry in duplicates:
-                for idx, existing_entry in enumerate(logbook_data["Logbook"]):
-                    if (existing_entry["Callsign"] == duplicate_entry["Callsign"] and
-                        existing_entry["Date"] == duplicate_entry["Date"] and
-                        existing_entry["Time"] == duplicate_entry["Time"]):
-                        logbook_data["Logbook"][idx] = duplicate_entry
-                        break
-        elif action == "Ignore":
-            pass
-        elif action == "Add":
-            new_entries.extend(duplicates)
-            added_count = len(new_entries)
 
-    logbook_data["Logbook"].extend(new_entries)
+        try:
+            try:
+                with open(adif_file, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except UnicodeDecodeError:
+                with open(adif_file, "r", encoding="latin-1") as f:
+                    content = f.read()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load ADIF file: {e}")
+            progress_window.destroy()
+            return
 
-    with open(current_json_file, "w", encoding="utf-8") as json_file:
-        json.dump(logbook_data, json_file, indent=4)
+        qso_records = re.split(r'<eor>', content, flags=re.IGNORECASE)
+        total_qso_count = len(qso_records)
+        progress["maximum"] = total_qso_count
 
-    for window in root.winfo_children():
-        if isinstance(window, tk.Toplevel) and hasattr(window, 'update_logbook'):
-            window.update_logbook()
+        new_entries = []
+        duplicates = []
 
-    message = f"{added_count} new QSO(s) added to the logbook."
-    if duplicates and action:
-        message = f"{len(duplicates)} duplicate QSO(s) processed. {added_count} new QSO(s) added to the logbook."
-    messagebox.showinfo("Import ADIF", message)
+        for i, record in enumerate(qso_records, 1):
+            if not record.strip():
+                continue
+
+            sig = extract_field(record, "sig").upper()
+            sig_info = extract_field(record, "sig_info")
+            wwff = sig_info if sig == "WWFF" else ""
+            pota = sig_info if sig == "POTA" else ""
+
+            entry = {
+                "Date": import_format_date(extract_field(record, "qso_date")) or "",
+                "Time": import_format_time(extract_field(record, "time_on")) or "",
+                "Callsign": (extract_field(record, "call") or "").upper(),
+                "Name": (extract_field(record, "name") or ""),
+                "My Callsign": (extract_field(record, "station_callsign") or "").upper(),
+                "My Operator": (extract_field(record, "operator") or "").upper(),
+                "My Locator": ("").upper(),
+                "My Location": ("").upper(),
+                "My WWFF": ("").upper(),
+                "My POTA": ("").upper(),
+                "Country": extract_field(record, "country") or "",
+                "Continent": (extract_field(record, "cont") or "").upper(),
+                "Sent": extract_field(record, "rst_sent") or "",
+                "Received": extract_field(record, "rst_rcvd") or "",
+                "Mode": extract_field(record, "mode") or "",
+                "Submode": extract_field(record, "submode") or "",
+                "Band": (extract_field(record, "band") or "").lower(),
+                "Frequency": extract_field(record, "freq") or "",
+                "Locator": (extract_field(record, "gridsquare") or "").upper(),
+                "Comment": extract_field(record, "comment") or "",
+                "WWFF": wwff,
+                "POTA": pota,
+                "Satellite": extract_field(record, "sat_name") or ""
+            }
+
+            if extract_field(record, "my_sig") == "POTA":
+                entry["My POTA"] = extract_field(record, "my_sig_info") or ""
+
+            callsign = entry["Callsign"]
+            check_callsign_prefix(callsign, False)
+            if country_var:
+                entry["Country"] = country_var
+            if continent_var:
+                entry["Continent"] = continent_var
+
+            if entry["Callsign"]:
+                is_duplicate = any(
+                    existing_entry["Callsign"] == entry["Callsign"] and
+                    existing_entry["Date"] == entry["Date"] and
+                    existing_entry["Time"] == entry["Time"]
+                    for existing_entry in logbook_data["Logbook"]
+                )
+                if is_duplicate:
+                    duplicates.append(entry)
+                else:
+                    new_entries.append(entry)
+
+            # Update progress bar
+            progress["value"] = i
+            progress_counter.config(text=f"{i} / {total_qso_count} QSOs")
+            progress_window.update_idletasks()
+
+        progress_window.destroy()
+
+        added_count = len(new_entries)
+        action = None
+        if duplicates:
+            duplicate_count = len(duplicates)
+            action = custom_duplicate_dialog(parent=root, total_count=total_qso_count,
+                                             duplicate_count=duplicate_count, added_count=added_count)
+            if action is None:
+                return
+            elif action == "Overwrite":
+                for duplicate_entry in duplicates:
+                    for idx, existing_entry in enumerate(logbook_data["Logbook"]):
+                        if (existing_entry["Callsign"] == duplicate_entry["Callsign"] and
+                            existing_entry["Date"] == duplicate_entry["Date"] and
+                            existing_entry["Time"] == duplicate_entry["Time"]):
+                            logbook_data["Logbook"][idx] = duplicate_entry
+                            break
+            elif action == "Add":
+                new_entries.extend(duplicates)
+                added_count = len(new_entries)
+
+        logbook_data["Logbook"].extend(new_entries)
+
+        try:
+            with open(current_json_file, "w", encoding="utf-8") as json_file:
+                json.dump(logbook_data, json_file, indent=4)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save logbook: {e}")
+            return
+
+        for window in root.winfo_children():
+            if isinstance(window, tk.Toplevel) and hasattr(window, 'update_logbook'):
+                window.update_logbook()
+
+        message = f"{added_count} new QSO(s) added to the logbook."
+        if duplicates and action:
+            message = f"{len(duplicates)} duplicate QSO(s) processed. {added_count} new QSO(s) added."
+        messagebox.showinfo("Import ADIF", message)
+
+    # Start the import in a background thread
+    threading.Thread(target=do_import).start()
+
 
 
 def extract_field(record, field_name):
@@ -3236,6 +3261,12 @@ def open_station_setup():
     Station_Setup_Window.title("Station Setup")
     Station_Setup_Window.resizable(False, False)
 
+    if platform.system() == "Darwin":
+        Station_Setup_Window.geometry("400x400")
+    else:
+        Station_Setup_Window.geometry("380x400")
+
+
     # Force window to stay on top and modal
     Station_Setup_Window.transient(root)
     Station_Setup_Window.grab_set()
@@ -3373,7 +3404,13 @@ def open_preferences():
 
     Preference_Window = tk.Toplevel(root)
     Preference_Window.title("Preferences")
-    Preference_Window.resizable(False, False)
+    Preference_Window.focus_set()
+
+    if platform.system() == "Darwin":
+        Preference_Window.geometry("390x500")
+    else:
+        Preference_Window.geometry("390x500")
+
     # Force window to stay on top and modal
     Preference_Window.transient(root)
     Preference_Window.grab_set()
@@ -4063,7 +4100,7 @@ def show_about():
     tk.Label(About_Window, text="MiniBook", font=('Arial', 20, 'bold')).pack(pady=10)
     separator = tk.Frame(About_Window, height=2, bd=0, relief='sunken', bg='gray')
     separator.pack(fill='x', pady=5, padx=10)
-    tk.Label(About_Window, text=f"Version {VERSION_NUMBER}\n\nA Simple Python based\nJSON Logbook\n\nDeveloped by:\nBjörn Pasteuning\nPD5DJ\n\nCopyright 2024", font=('Arial', 10)).pack(pady=10)
+    tk.Label(About_Window, text=f"Version {VERSION_NUMBER}\n\nA Python based\nJSON Logbook\n\nDeveloped by:\nBjörn Pasteuning\nPD5DJ\n\nCopyright 2024", font=('Arial', 10)).pack(pady=10)
 
     url = "https://www.pd5dj.nl"
     link = tk.Label(About_Window, text=url, fg="blue", cursor="hand2", font=('Arial', 10))
@@ -4558,11 +4595,17 @@ def show_color_legend():
 # Main window
 root = tk.Tk()
 
-# load and parse cty.dat into dxcc_data with cty_parser.py
-#dxcc_data = parse_cty_file("cty.dat")
+style = ttk.Style()
+style.theme_use("clam")
+
+if platform.system() == "Darwin": # MacOS
+    root.geometry("620x730")
+    root.minsize(620, 730)
+else: # Linux, Windows
+    root.geometry("680x780")
+    root.minsize(680, 780)
 
 root.resizable(False, False)
-root.minsize(680, 265)
 
 # Global variable for the logbook window
 Logbook_Window = None
@@ -4711,6 +4754,7 @@ help_menu = tk.Menu(menu_bar, tearoff=0)
 help_menu.add_command(label="Worked Before Color Legend", command=show_color_legend)
 help_menu.add_separator()
 help_menu.add_command(label="Download latest CTY.DAT file", command=download_ctydat_file)
+help_menu.add_command(label="Download Satellites Names", command=download_satellites)
 help_menu.add_separator()
 help_menu.add_command(label="About", command=show_about)
 menu_bar.add_cascade(label="Help", menu=help_menu)
@@ -5146,26 +5190,97 @@ Button_frame.grid_columnconfigure(1, weight=1)
 Button_frame.grid_columnconfigure(2, weight=1)
 Button_frame.grid_columnconfigure(3, weight=1)
 
-# Lookup Button
-lookup_button = tk.Button(Button_frame, text="Lookup\nF2", command=threaded_on_query, bd=3, relief='raised', width=10, height=2, bg='#FFFF80', fg='black', font=('Arial', 10, 'bold'))
-lookup_button.grid(row=0, column=1, padx=10)
-lookup_button.configure(takefocus=False)
+# Detecteer platform en pas stijl toe
+use_ttk = False
+if platform.system() == "Darwin":
+    use_ttk = True
+    style = ttk.Style()
+    style.theme_use("clam")
 
-# Log Button
-log_button = tk.Button(Button_frame, text="Log QSO\nF5", command=log_qso, bd=3, relief='raised', width=10, height=2, bg='#00FF80', fg='black', font=('Arial', 10, 'bold'))
-log_button.grid(row=0, column=2, padx=10)
-log_button.configure(takefocus=False)
+    # Lookup button
+    style.configure("Lookup.TButton",
+        foreground="black",
+        background="#FFFF80",
+        font=('Arial', 10, 'bold'),
+        anchor="center",
+        justify="center",
+        padding=(0, 6)
+    )
+    style.map("Lookup.TButton", background=[("active", "#e0e066")])
 
-# Wipe Button
-wipe_button = tk.Button(Button_frame, text="Wipe\nF1", command=reset_fields, bd=3, relief='raised', width=10, height=2, bg='#FF8080', fg='black', font=('Arial', 10, 'bold'))
-wipe_button.grid(row=0, column=0, padx=10)
-wipe_button.configure(takefocus=False)
+    # Log button
+    style.configure("Log.TButton",
+        foreground="black",
+        background="#00FF80",
+        font=('Arial', 10, 'bold'),
+        anchor="center",
+        justify="center",
+        padding=(0, 6)
+    )
+    style.map("Log.TButton", background=[("active", "#00cc66")])
 
-# EXIT Button
-EXIT_button = tk.Button(Button_frame, text="EXIT", command=exit_program, bd=3, relief='raised', width=10, height=2, bg='grey', fg='white', font=('Arial', 10, 'bold'))
-EXIT_button.grid(row=0, column=3, padx=10)
-EXIT_button.configure(takefocus=False)
+    # Wipe button
+    style.configure("Wipe.TButton",
+        foreground="black",
+        background="#FF8080",
+        font=('Arial', 10, 'bold'),
+        anchor="center",
+        justify="center",
+        padding=(0, 6)
+    )
+    style.map("Wipe.TButton", background=[("active", "#cc6666")])
 
+    # Exit button
+    style.configure("Exit.TButton",
+        foreground="white",
+        background="grey",
+        font=('Arial', 10, 'bold'),
+        anchor="center",
+        justify="center",
+        padding=(0, 12)
+    )
+    style.map("Exit.TButton", background=[("active", "#666666")])
+
+
+# --- Buttons ---
+if use_ttk:
+    # ttk variant met vaste afmeting in tekens
+    lookup_button = ttk.Button(Button_frame, text="Lookup\nF2", command=threaded_on_query, style="Lookup.TButton", width=10)
+    lookup_button.grid(row=0, column=1, padx=10)
+    lookup_button.configure(takefocus=False)
+
+    log_button = ttk.Button(Button_frame, text="Log QSO\nF5", command=log_qso, style="Log.TButton", width=10)
+    log_button.grid(row=0, column=2, padx=10)
+    log_button.configure(takefocus=False)
+
+    wipe_button = ttk.Button(Button_frame, text="Wipe\nF1", command=reset_fields, style="Wipe.TButton", width=10)
+    wipe_button.grid(row=0, column=0, padx=10)
+    wipe_button.configure(takefocus=False)
+
+    EXIT_button = ttk.Button(Button_frame, text="EXIT", command=exit_program, style="Exit.TButton", width=10)
+    EXIT_button.grid(row=0, column=3, padx=10)
+    EXIT_button.configure(takefocus=False)
+
+else:
+    # Lookup
+    lookup_button = tk.Button(Button_frame, text="Lookup\nF2", command=threaded_on_query, bd=3, relief='raised', width=10, height=2, bg='#FFFF80', fg='black', font=('Arial', 10, 'bold'))
+    lookup_button.grid(row=0, column=1, padx=10)
+    lookup_button.configure(takefocus=False)
+
+    # Log
+    log_button = tk.Button(Button_frame, text="Log QSO\nF5", command=log_qso, bd=3, relief='raised', width=10, height=2, bg='#00FF80', fg='black', font=('Arial', 10, 'bold'))
+    log_button.grid(row=0, column=2, padx=10)
+    log_button.configure(takefocus=False)
+
+    # Wipe
+    wipe_button = tk.Button(Button_frame, text="Wipe\nF1", command=reset_fields, bd=3, relief='raised', width=10, height=2, bg='#FF8080', fg='black', font=('Arial', 10, 'bold'))
+    wipe_button.grid(row=0, column=0, padx=10)
+    wipe_button.configure(takefocus=False)
+
+    # EXIT
+    EXIT_button = tk.Button(Button_frame, text="EXIT", command=exit_program, bd=3, relief='raised', width=10, height=2, bg='grey', fg='white', font=('Arial', 10, 'bold'))
+    EXIT_button.grid(row=0, column=3, padx=10)
+    EXIT_button.configure(takefocus=False)
 
 
 
@@ -5182,8 +5297,6 @@ last_qso_label.grid(row=0, column=0, sticky='w', padx=5)
 # QRZ_status_label 
 QRZ_status_label = tk.Label(status_frame, font=('Arial', 8, 'bold'), text="QRZ Status")
 QRZ_status_label.grid(row=0, column=1, sticky='e', padx=5)
-
-
 
 
 # Buttons Bindings

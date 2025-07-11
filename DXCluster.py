@@ -17,6 +17,7 @@
 #   22-06-2025  :   1.0.5   - Custom filter added, based of REGEX
 #                           - Users can now see theirselves in the tree when they are spotted. (green)
 #                           - Auto reconnect function added, when connection drops, app will try to reconnect every 5 seconds, when Auto Reconnect is enabled.
+#   11-07-2025  :   1.0.6   - Band Combobox changed for band buttons.
 #**********************************************************************************************************************************
 
 import asyncio
@@ -33,7 +34,7 @@ from datetime import datetime
 from cty_parser import parse_cty_file
 import requests
 
-VERSION_NUMBER = ("v1.0.5")
+VERSION_NUMBER = ("v1.0.6")
 
 INI_FILE        = "dxcluster.ini"
 CLUSTER_FILE    = "clusters.json"
@@ -238,31 +239,63 @@ class DXClusterApp:
         filters_frame = tk.LabelFrame(top_frame, text="Spot Filters", relief="groove", bd=2)
         filters_frame.grid(row=0, column=0, padx=(0, 10), pady=(0, 10), sticky="nsew")
 
-        tk.Label(filters_frame, text="Band:").grid(row=0, column=0, sticky="e")
-        self.band_var = tk.StringVar()
-        bands_with_all = ["ALL"] + list(BANDS.keys())
-        self.band_menu = ttk.Combobox(filters_frame, textvariable=self.band_var, values=bands_with_all, state="readonly", width=10)
-        font_large = tkinter.font.Font(family="Arial", size=12)
-        self.band_menu.configure(font=font_large)
-        self.band_menu.grid(row=0, column=1, padx=(2, 10), sticky=tk.W)
-        self.band_menu.current(0)
-        self.band_menu.bind("<<ComboboxSelected>>", lambda e: self.filter_spots())
+        self.band_var = tk.StringVar(value="ALL")
 
-        tk.Label(filters_frame, text="Type:").grid(row=0, column=2, sticky="e")
+        def get_band_low(b):
+            return BANDS[b][0] if b in BANDS else float('inf')
+
+        # Sorteer banden op frequentie
+        sorted_bands = sorted([b for b in BANDS if b not in ("HF", "VHF", "UHF", "SHF")], key=get_band_low)
+        bands_list = ["ALL"] + sorted_bands
+
+        self.band_buttons = {}
+
+        # Maak frame aan op row=1
+        band_buttons_frame = tk.Frame(filters_frame)
+        band_buttons_frame.grid(row=0, column=0, columnspan=10, sticky="w", pady=(2, 5))
+
+        def update_band_highlight():
+            for b, btn in self.band_buttons.items():
+                if self.band_var.get() == b:
+                    btn.config(bg="blue", fg="white")
+                else:
+                    btn.config(bg="SystemButtonFace", fg="black")
+
+        def set_band_and_filter(band):
+            self.band_var.set(band)
+            update_band_highlight()
+            self.filter_spots()
+
+        # Layout in 2 rijen (bijv. 8 knoppen per rij)
+        buttons_per_row = 10
+        for i, band in enumerate(bands_list):
+            row = i // buttons_per_row
+            col = i % buttons_per_row
+            btn = tk.Button(band_buttons_frame, text=band, width=5,
+                            command=lambda b=band: set_band_and_filter(b))
+            btn.grid(row=row, column=col, padx=1, pady=1)
+            self.band_buttons[band] = btn
+
+        update_band_highlight()
+
+
+
+        tk.Label(filters_frame, text="Callsign Filter:").grid(row=2, column=0, sticky="w")
         self.mode_var = tk.StringVar()
         modes_with_all = ["ALL"] + list(MODES.keys())
         self.mode_menu = ttk.Combobox(filters_frame, textvariable=self.mode_var, values=modes_with_all, state="readonly", width=10)
         font_small = tkinter.font.Font(family="Arial", size=12)
         self.mode_menu.configure(font=font_small)
-        self.mode_menu.grid(row=0, column=3, padx=(2, 10), sticky=tk.W)
+        self.mode_menu.grid(row=2, column=1, padx=(2, 10), sticky=tk.W)
         self.mode_menu.current(0)
         self.mode_menu.bind("<<ComboboxSelected>>", lambda e: self.filter_spots())
 
         custom_keys = list(self.custom_filters.keys())
         self.mode_menu["values"] = ["ALL"] + list(MODES.keys()) + custom_keys
 
-        tk.Button(filters_frame, text="⚙", width=2, command=self.manage_custom_filters).grid(row=0, column=4, padx=(0, 5))
-        tk.Button(filters_frame, text="?", width=2, command=self.show_regex_help).grid(row=0, column=5, padx=(0, 5))
+        tk.Label(filters_frame, text="Manage Custom Filters:").grid(row=2, column=2, sticky="e")
+        tk.Button(filters_frame, text="⚙", width=2, command=self.manage_custom_filters).grid(row=2, column=3, padx=(0, 5))
+        tk.Button(filters_frame, text="?", width=2, command=self.show_regex_help).grid(row=2, column=4, padx=(0, 5))
 
 
         buttons_frame = tk.LabelFrame(top_frame, text="Actions", relief="groove", bd=2)
@@ -276,7 +309,7 @@ class DXClusterApp:
         tk.Label(buttons_frame).grid(row=0, column=0)
         send_spot_btn = tk.Button(buttons_frame, text="Send Spot", command=self.open_send_spot_popup,
                                 fg="white", bg="green", width=12)
-        send_spot_btn.grid(row=0, column=1, pady=5)
+        send_spot_btn.grid(row=1, column=1, pady=5)
         tk.Label(buttons_frame).grid(row=0, column=2)
 
         style = ttk.Style(self.root)
@@ -335,10 +368,14 @@ class DXClusterApp:
         self.connect_button.grid(row=0, column=2, rowspan=2, padx=10, sticky="w")
 
         self.auto_reconnect_var = tk.BooleanVar()
-        self.auto_reconnect_var.set(self.load_ini_setting("AutoReconnect", "1") == "1")
+        self.auto_reconnect_var.set(self.load_ini_setting("AutoReconnect", "0") == "1")
 
         self.auto_reconnect_checkbox = tk.Checkbutton(conn_frame, text="Auto reconnect", variable=self.auto_reconnect_var, command=self.save_auto_reconnect_setting)
         self.auto_reconnect_checkbox.grid(row=0, column=3, rowspan=2, sticky="w", pady=(0, 5))
+
+        # Als AutoReconnect nog niet bestaat in INI, schrijf dan expliciet 0
+        if self.load_ini_setting("AutoReconnect", "") == "":
+            self.save_auto_reconnect_setting()
 
 
         last_used = self.load_last_used_cluster()
@@ -786,13 +823,28 @@ class DXClusterApp:
 
     # Last used cluster storage
     def save_last_used_cluster(self, host, port, login):
-        self.safe_write_to_ini("LAST", {
-            "host": host,
-            "port": str(port)
-        })
-        self.safe_write_to_ini("LOGIN", {
-            "user": login
-        })
+        config = configparser.ConfigParser()
+        config.optionxform = str
+
+        # Lees bestaande INI (indien aanwezig)
+        if os.path.exists(INI_FILE):
+            config.read(INI_FILE, encoding="utf-8")
+
+        # Voeg secties toe indien ze nog niet bestaan
+        if "LAST" not in config:
+            config["LAST"] = {}
+        if "LOGIN" not in config:
+            config["LOGIN"] = {}
+
+        # Vul waarden in
+        config["LAST"]["host"] = host
+        config["LAST"]["port"] = str(port)
+        config["LOGIN"]["user"] = login
+
+        # Schrijf terug naar ini
+        with open(INI_FILE, "w", encoding="utf-8") as f:
+            config.write(f)
+
 
 
     # Last used cluster retrieval
@@ -803,9 +855,15 @@ class DXClusterApp:
             return None
         config.read(INI_FILE, encoding="utf-8")
 
-        host = config["LAST"].get("host", "")
-        port = config["LAST"].get("port", "")
-        login = config["LOGIN"].get("user", "")
+        host = ""
+        port = ""
+        login = ""
+
+        if "LAST" in config:
+            host = config["LAST"].get("host", "")
+            port = config["LAST"].get("port", "")
+        if "LOGIN" in config:
+            login = config["LOGIN"].get("user", "")
 
         if host and port:
             hostport = f"{host}:{port}"
@@ -813,6 +871,7 @@ class DXClusterApp:
             self.login_var.set(login)
             return hostport
         return None
+
 
 
 
@@ -898,6 +957,7 @@ class DXClusterApp:
 
         self.writer = None
         self.connected = False
+        
         self.connect_button.config(text="Connect")
 
         self.auto_reconnect_var.set(False)
