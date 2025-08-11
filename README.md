@@ -1,6 +1,31 @@
 # MiniBook
 Simple compact JSON based logbook with rig control
 
+## Big announcement!
+As of from version 1.4.3 the whole file structure has been changed.. please backup your **config.ini** and **settings.ini** and **dxcluster.ini**
+These files have been reallocated, and changed in file name!
+Due the expansion of POTA / BOTA / WWFF support I needed to reorganise the file/folder path structure.
+
+there now 2 folders added in the root of the MiniBook folder
+
+**/data**
+**/settings**
+
+
+Config.txt				moved/renamed to	/settings/minibook.ini
+settings.ini			moved/renamed to	/settings/hamlibserver.ini
+dxcluster.ini			moved to			/settings/dxcluster.ini
+clusters.json			moved to			/settings/clusters.json
+
+cty.dat					moved to			/data/cty.dat
+rigs.ini				moved to			/data/rigs.ini
+satellites.txt			moved to			/data/satellites.txt
+wwff_directory.csv		moved to			/data/wwff_directory.csv
+wwbota.csv				moved to			/data/wwbota.csv
+all_parks.csv			moved to			/data/all_parks.csv
+dxcc_to_pota_map.json	moved to			/data/dxcc_to_pota_map.json
+
+
 # The Story Behind MiniBook: A Compact Logbook Solution
 MiniBook was created with a clear vision in mind: to provide radio enthusiasts with a compact, straightforward, and portable logbook solution. Unlike many of the heavier, installation-required programs on the market, MiniBook was designed to be lightweight and easy to use.
 
