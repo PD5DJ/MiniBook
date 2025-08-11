@@ -9,17 +9,26 @@
 # Version history
 #   01-05-2025  :   1.0.0   - Initial basics running
 #   19-05-2025  :   1.0.1   - Preset options added
+#   10-08-2025  :   1.0.2   - Changed filepath structure
 #**********************************************************************************************************************************
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
+from pathlib import Path
 import subprocess
 import sys
 import serial.tools.list_ports
 import os
 import configparser
 
-VERSION = "v1.0.1"
-SETTINGS_FILE = "settings.ini"
+VERSION = "v1.0.2"
+
+# Configuration file path
+SETTINGS_FOLDER     = Path.cwd() / "settings"
+DATA_FOLDER         = Path.cwd() / "data"
+
+
+SETTINGS_FILE       = SETTINGS_FOLDER / "hamlibserver.ini"
+RIGS_FILE           = DATA_FOLDER / "rigs.ini"
 
 class RigCtlGUI:
     def __init__(self, root):
@@ -52,7 +61,7 @@ class RigCtlGUI:
 
     def load_rigs(self):
         rigs = {}
-        with open('rigs.ini', 'r', encoding='utf-8') as file:
+        with open(RIGS_FILE, 'r', encoding='utf-8') as file:
             for line in file:
                 if ':' in line:
                     name, number = line.strip().rsplit(':', 1)

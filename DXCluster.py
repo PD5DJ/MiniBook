@@ -1,5 +1,5 @@
 #**********************************************************************************************************************************
-# File          :   telspot.py
+# File          :   DXCluster.py
 # Project       :   Telnet DX Cluster
 # Description   :   DX Spider Telnet client, can be run standalone, or from within MiniBook with Spot click -> Logbook and Rigcontrol
 # Date          :   27-05-2025
@@ -18,6 +18,7 @@
 #                           - Users can now see theirselves in the tree when they are spotted. (green)
 #                           - Auto reconnect function added, when connection drops, app will try to reconnect every 5 seconds, when Auto Reconnect is enabled.
 #   11-07-2025  :   1.0.6   - Band Combobox changed for band buttons.
+#   10-08-2025  :   1.0.7   - Changed filepath structure
 #**********************************************************************************************************************************
 
 import asyncio
@@ -30,15 +31,20 @@ import re
 import configparser
 import os
 import socket
+from pathlib import Path
 from datetime import datetime
 from cty_parser import parse_cty_file
 import requests
 
-VERSION_NUMBER = ("v1.0.6")
+VERSION_NUMBER = ("v1.0.7")
 
-INI_FILE        = "dxcluster.ini"
-CLUSTER_FILE    = "clusters.json"
-DXCC_FILE       = "cty.dat"
+SETTINGS_FOLDER     = Path.cwd() / "settings"
+DATA_FOLDER         = Path.cwd() / "data"
+
+INI_FILE        = SETTINGS_FOLDER / "dxcluster.ini"
+CLUSTER_FILE    = SETTINGS_FOLDER / "clusters.json"
+DXCC_FILE       = DATA_FOLDER / "cty.dat"
+
 ctydat_url      = "https://www.country-files.com/bigcty/cty.dat"
 
 BANDS = {

@@ -8,6 +8,7 @@
 #
 # Version history
 #   29-05-2025  :   1.0.0   - Initial basics running
+#   09-08-2025  :   1.0.1   - main_prefix added
 #**********************************************************************************************************************************
 
 class CtyEntry:
@@ -45,14 +46,17 @@ def parse_entry(lines):
     header = lines[0]
     data = ''.join(lines[1:])
     parts = header.split(':')
+
     name = parts[0].strip()
     cq_zone = parts[1].strip()
     itu_zone = parts[2].strip()
     continent = parts[3].strip()
     lat = parts[4].strip()
     lon = parts[5].strip()
+    main_prefix = parts[7].strip().upper()  # main-prefix from frist line
 
     raw_prefixes = data.strip().split(',')
-    prefixes = [p.strip() for p in raw_prefixes if p.strip()]
-    
+    prefixes = [main_prefix] + [p.strip().upper() for p in raw_prefixes if p.strip()]
+
     return CtyEntry(name, cq_zone, itu_zone, continent, lat, lon, prefixes)
+

@@ -1,0 +1,12 @@
+[
+  {
+    "prefix": "PI4CC",
+    "host": "dcx.pi4cc.nl",
+    "port": 8000
+  },
+  {
+    "prefix": "WA9PIE",
+    "host": "hrd.wa9pie.net",
+    "port": 8000
+  }
+]
