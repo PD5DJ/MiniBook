@@ -12,8 +12,8 @@ there now 2 folders added in the root of the MiniBook folder
 **/settings**
 
 
-Config.txt				moved/renamed to	/settings/minibook.ini
-settings.ini			moved/renamed to	/settings/hamlibserver.ini
+Config.txt				moved/renamed to	/settings/minibook.ini  
+settings.ini			moved/renamed to	/settings/hamlibserver.ini  
 dxcluster.ini			moved to			/settings/dxcluster.ini
 clusters.json			moved to			/settings/clusters.json
 
