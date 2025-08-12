@@ -112,6 +112,7 @@
 # 09-08-2025    :           - Added WWFF/POTA/BOTA Prefix retreive function
 #                           - Added lookup for Park/Bunker names
 # 10-08-2025    :           - Changed filepath structure
+# 11-08-2025    :   1.4.4   - Added mapping option to view references on map
 #**********************************************************************************************************************************
 
 from datetime import datetime, timedelta, date
@@ -119,6 +120,8 @@ from pathlib import Path
 from tkcalendar import DateEntry
 from tkinter import filedialog, messagebox, ttk
 import configparser
+import csv
+import html
 import ipaddress
 import json
 import math
@@ -130,12 +133,12 @@ import requests
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import tkinter as tk
 import urllib.parse
 import webbrowser
-import csv
 import xml.etree.ElementTree as ET
 from DXCluster import launch_dx_spot_viewer
 from cty_parser import parse_cty_file
@@ -145,7 +148,7 @@ import traceback
 # ------- Set True if you want to print system wide debug information -------
 DEBUG               = False
 
-VERSION_NUMBER = ("v1.4.3")
+VERSION_NUMBER = ("v1.4.4")
 
 # Configuration file path
 SETTINGS_FOLDER     = Path.cwd() / "settings"
@@ -326,14 +329,207 @@ def clear_station_labels():
 
 
 
-# Function to check if Locator is valid format
+#Checks if a given maidenhead locator is valid for example JO22LO49
 def is_valid_locator(locator):
-    """Check if a locator is valid: either empty or at least 4 characters matching the Maidenhead format."""
     if locator == "":
-        return True  # Locator can be empty
-    elif len(locator) >= 4 and re.match(r'^[A-R]{2}\d{2}([A-X]{2})?$', locator, re.IGNORECASE):
         return True
-    return False
+    if len(locator) < 4 or len(locator) % 2 != 0:
+        return False
+    # Regex pattern:
+    # - [A-R]{2} : veld
+    # - \d{2} : vierkant
+    # - ([A-X]{2})? : optioneel subsquare
+    # - (\d{2})? : optioneel extended vierkant (cijfers)
+    pattern = r'^[A-R]{2}\d{2}([A-X]{2})?(\d{2})?$'
+    return bool(re.match(pattern, locator, re.IGNORECASE))
+
+
+
+#Converts Maidenhead locator to Latttitude and Longitude coordinates
+def maidenhead_to_latlon(locator):
+    """
+    Convert Maidenhead locator (2/4/6/8 characters) to (lat, lon) at the center of the grid square.
+    Returns: (latitude, longitude) as floats rounded to 6 decimals.
+    """
+
+    loc = locator.strip().upper()
+    if len(loc) < 2:
+        raise ValueError("Locator must be at least 2 characters")
+
+    # basis (fields)
+    lon = (ord(loc[0]) - ord('A')) * 20.0 - 180.0
+    lat = (ord(loc[1]) - ord('A')) * 10.0 - 90.0
+
+    # squares (digits)
+    if len(loc) >= 4:
+        lon += int(loc[2]) * 2.0
+        lat += int(loc[3]) * 1.0
+
+    # subsquares (letters A-X)
+    if len(loc) >= 6:
+        # 2 degrees / 24 = 5' = 0.083333333... ; 1 degree / 24 = 2.5' = 0.041666666...
+        lon += (ord(loc[4]) - ord('A')) * (2.0 / 24.0)
+        lat += (ord(loc[5]) - ord('A')) * (1.0 / 24.0)
+
+    # optional extended digits (7/8 chars)
+    if len(loc) >= 8:
+        lon += int(loc[6]) * (2.0 / 24.0 / 10.0)
+        lat += int(loc[7]) * (1.0 / 24.0 / 10.0)
+
+    # center-offset afhankelijk van precisie
+    if len(loc) >= 8:
+        lon += (2.0 / 24.0 / 10.0) / 2.0
+        lat += (1.0 / 24.0 / 10.0) / 2.0
+    elif len(loc) >= 6:
+        lon += (2.0 / 24.0) / 2.0
+        lat += (1.0 / 24.0) / 2.0
+    elif len(loc) >= 4:
+        lon += 1.0
+        lat += 0.5
+    else:
+        lon += 10.0
+        lat += 5.0
+
+    return round(lat, 6), round(lon, 6)
+    
+
+# Opens OpenStreetMap and shows pins on map with reference number and name, with a line showing distance in tooltip
+def open_osm_map(lat_var, long_var, my_locator_var, my_callsign_var, ref, name):
+    my_lat, my_lon = maidenhead_to_latlon(my_locator_var.get())
+    my_callsign = my_callsign_var.get().strip().upper()
+
+    lat = lat_var.get().strip()
+    lon = long_var.get().strip()
+
+    if lat and lon:
+        ref_escaped = html.escape(ref).replace("'", "\\'")
+        name_escaped = html.escape(name).replace("'", "\\'")
+
+        html_template = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>BOTA /POTA / WWFF reference Mapping</title>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+          <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+          <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+          <style>
+            #map {{ height: 100vh; margin:0; padding:0; }}
+            html, body {{ height: 100%; margin:0; padding:0; }}
+            .leaflet-tooltip {{
+                background: white;
+                border: 1px solid black;
+                border-radius: 4px;
+                padding: 2px 5px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+          </style>
+        </head>
+        <body>
+          <div id="map"></div>
+          <script>
+            var map = L.map('map').setView([{my_lat}, {my_lon}], 10);
+
+            // Baselayers
+            var osm = L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+              maxZoom: 19,
+              attribution: '© OpenStreetMap contributors'
+            }}).addTo(map);
+
+            var esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
+              maxZoom: 19,
+              attribution: 'Tiles © Esri'
+            }});
+
+            var esriLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
+              maxZoom: 19,
+              attribution: 'Labels © Esri',
+              pane: 'overlayPane'
+            }});
+
+            var esriHybrid = L.layerGroup([esriSat, esriLabels]);
+
+            // Markers
+            var blueIcon = L.icon({{
+              iconUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png',
+              shadowUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png',
+              iconSize:     [25, 41],
+              iconAnchor:   [12, 41],
+              popupAnchor:  [1, -34],
+              shadowSize:   [41, 41]
+            }});
+
+            var redIcon = L.icon({{
+              iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+              shadowUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png',
+              iconSize:     [25, 41],
+              iconAnchor:   [12, 41],
+              popupAnchor:  [1, -34],
+              shadowSize:   [41, 41]
+            }});
+
+            var marker1 = L.marker([{my_lat}, {my_lon}], {{icon: blueIcon}})
+                .addTo(map)
+                .bindPopup('Your Location:<br><b>{my_callsign}</b>')
+                .openPopup();
+
+            var marker2 = L.marker([{lat}, {lon}], {{icon: redIcon}})
+                .addTo(map)
+                .bindPopup('<b>{ref_escaped}</b><br>{name_escaped}')
+                .openPopup();
+
+            var latlngs = [
+                [{my_lat}, {my_lon}],
+                [{lat}, {lon}]
+            ];
+            var polyline = L.polyline(latlngs, {{color: 'green'}}).addTo(map);
+
+            var distance = map.distance(
+                L.latLng({my_lat}, {my_lon}),
+                L.latLng({lat}, {lon})
+            ) / 1000;
+            distance = distance.toFixed(1);
+
+            polyline.bindTooltip(distance + ' km', {{
+                permanent: true,
+                direction: 'center',
+                className: 'distance-tooltip'
+            }}).openTooltip();
+
+            var group = new L.featureGroup([marker1, marker2, polyline]);
+            map.fitBounds(group.getBounds().pad(0.5));
+
+            // Layer control
+            var baseMaps = {{
+                "OpenStreetMap": osm,
+                "Satelliet": esriSat,
+                "Satelliet + Labels": esriHybrid
+            }};
+            L.control.layers(baseMaps).addTo(map);
+          </script>
+        </body>
+        </html>
+        """
+
+        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html') as f:
+            f.write(html_template)
+            temp_file_path = f.name
+
+        webbrowser.open(f"file://{temp_file_path}")
+
+    else:
+        messagebox.showwarning("No Coordinates", "No valid coordinates found.")
+
+
+
+
+
+
+    
 
 
 # Frequency ranges and default frequencies for each band
@@ -1782,7 +1978,7 @@ def edit_qso(event):
     logbook_width = Logbook_Window.winfo_width()
     logbook_height = Logbook_Window.winfo_height()
     edit_width = 550
-    edit_height = 480 if platform.system() == "Darwin" else 420
+    edit_height = 600 if platform.system() == "Darwin" else 550
     edit_x = logbook_x + (logbook_width - edit_width) // 2
     edit_y = logbook_y + (logbook_height - edit_height) // 2
     Edit_Window.geometry(f"{edit_width}x{edit_height}+{edit_x}+{edit_y}")
@@ -3287,6 +3483,8 @@ def open_station_setup():
     local_bota_long = tk.StringVar()
     local_wwff = tk.StringVar(value=my_wwff_var.get())
     local_wwff_name = tk.StringVar()
+    local_wwff_lat = tk.StringVar()
+    local_wwff_long = tk.StringVar()    
     local_qrzapi = tk.StringVar(value=my_qrzapi_var.get())
     local_upload_qrz = tk.BooleanVar(value=upload_qrz_var.get())
 
@@ -3312,6 +3510,14 @@ def open_station_setup():
 
     tk.Label(lf1, text="Locator:", font=('Arial', 10)).grid(row=2, column=0, padx=10, pady=1, sticky='w')
     tk.Entry(lf1, textvariable=local_locator, font=('Arial', 10, 'bold')).grid(row=2, column=1, padx=10, pady=5, sticky='ew')
+
+
+    def open_qralocator():
+        url = "https://www.egloff.eu/qralocator/"
+        webbrowser.open(url)
+
+    btn = tk.Button(lf1, text="Find Your QRA Locator", command=open_qralocator)
+    btn.grid(row=2, column=2, padx=10, pady=5)    
 
     tk.Label(lf1, text="Location:", font=('Arial', 10)).grid(row=3, column=0, padx=10, pady=1, sticky='w')
     tk.Entry(lf1, textvariable=local_location, font=('Arial', 10, 'bold')).grid(row=3, column=1, padx=10, pady=5, sticky='ew')
@@ -3346,7 +3552,7 @@ def open_station_setup():
     tk.Label(wwff_frame, text="Reference No.:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
     wwff_entry = tk.Entry(wwff_frame, textvariable=local_wwff, font=('Arial', 10, 'bold'))
     wwff_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
-    wwff_entry.bind("<FocusOut>", lambda e: auto_fill_wwff_prefix(local_wwff, local_wwff_name, local_callsign))
+    wwff_entry.bind("<FocusOut>", lambda e: auto_fill_wwff_prefix(local_wwff, local_wwff_name, local_wwff_lat, local_wwff_long, local_callsign))
 
     tk.Label(wwff_frame, text="Park name:", font=('Arial', 10)).grid(row=1, column=0, columnspan=2, padx=10, pady=1, sticky='w')
     tk.Label(wwff_frame, textvariable=local_wwff_name, font=('Arial', 10, 'bold'), wraplength=360, justify="left").grid(row=1, column=1, columnspan=2, padx=10, pady=1, sticky='w')
@@ -3369,7 +3575,7 @@ def open_station_setup():
 
     # Auto fill calls
     auto_fill_pota_prefix(local_pota, local_pota_name, local_callsign)
-    auto_fill_wwff_prefix(local_wwff, local_wwff_name, local_callsign)
+    auto_fill_wwff_prefix(local_wwff, local_wwff_name, local_wwff_lat, local_wwff_long, local_callsign)
     auto_fill_bota_prefix(local_bota, local_bota_name, local_bota_lat, local_bota_long, local_callsign)
 
     for frame in (pota_frame, wwff_frame, bota_frame):
@@ -4281,19 +4487,29 @@ def wwffref_check():
     try:
         if not os.path.exists(WWFF_FILE):
             messagebox.showinfo("File Not Found", "The file wwff_directory.csv was not found. It will now be downloaded.")
-            download_wwffref_file()  # Automatisch downloaden als het bestand ontbreekt
+            download_wwffref_file()
 
-        # Bestand openen en inlezen
-        with open(WWFF_FILE, encoding="utf-8") as f:
-            for line in f:
-                parts = line.strip().split(",")
-                if len(parts) >= 3:
-                    ref = parts[0].strip().upper()
-                    name = parts[2].strip()
-                    wwff_references[ref] = name
+        wwff_references = {}
+        with open(WWFF_FILE, encoding="utf-8", newline='') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                # We verwachten minstens 12 kolommen: ref, ..., lat, lon, ...
+                if len(row) >= 12:
+                    ref = row[0].strip().upper()
+                    name = row[2].strip()
+                    lat = row[10].strip()
+                    lon = row[11].strip()
+
+                    wwff_references[ref] = {
+                        "name": name,
+                        "lat": lat,
+                        "lon": lon
+                    }
 
     except Exception as e:
         messagebox.showerror("Error", f"Error loading WWFF reference list: {e}")
+
+
 
 def download_wwffref_file():
     try:
@@ -4308,7 +4524,7 @@ def download_wwffref_file():
         messagebox.showerror("Download Error", f"Failed to download wwff_directory.csv: {e}")
 
 
-def auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, callsign_var):
+def auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, wwff_lat_var, wwff_long_var, callsign_var):
     raw_val = wwff_var.get().strip()
     call = callsign_var.get().strip().upper()
     wwff_digits = re.sub(r"\D", "", raw_val)
@@ -4337,14 +4553,20 @@ def auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, callsign_var):
         ref_code = f"{land_prefix}FF-{wwff_digits.zfill(4)}"
         wwff_var.set(ref_code)
 
-        # Parknaam opzoeken
-        park_name = wwff_references.get(ref_code, "").replace('"', '').strip()
-        wwff_park_name_var.set(park_name)
+        park_info = wwff_references.get(ref_code)
+        if park_info:
+            wwff_park_name_var.set(park_info["name"])
+            wwff_lat_var.set(park_info["lat"])
+            wwff_long_var.set(park_info["lon"])
+        else:
+            wwff_park_name_var.set("")
+            wwff_lat_var.set("")
+            wwff_long_var.set("")
     else:
-        # land_prefix niet gevonden → alles leegmaken
         wwff_var.set("")
-        wwff_park_name_var.set("")        
-
+        wwff_park_name_var.set("")
+        wwff_lat_var.set("")
+        wwff_long_var.set("")
 
 #########################################################################################
 #  ___  ___ _____ _     ___ ___ ___ ___ ___ ___ _  _  ___ ___ 
@@ -4870,6 +5092,8 @@ my_qrzapi_var = tk.StringVar()
 
 wwff_var = tk.StringVar()
 wwff_var.trace("w", lambda *args: wwff_var.set(wwff_var.get().upper()))
+wwff_lat_var = tk.StringVar()
+wwff_long_var = tk.StringVar()
 pota_var = tk.StringVar()
 pota_var.trace("w", lambda *args: pota_var.set(pota_var.get().upper()))
 bota_var = tk.StringVar()
@@ -4983,6 +5207,8 @@ reference_menu.add_command(label="WWFF Agenda", command=lambda: webbrowser.open(
 reference_menu.add_command(label="WWFF Dutch Map", command=lambda: webbrowser.open("https://www.google.com/maps/d/u/0/view?hl=en&mid=1yXBN79NWlsI-wrZaDfyeXA2zg129nEU&ll=52.12186480765635%2C5.251994000000018&z=8"))
 reference_menu.add_command(label="WWFF Global Map", command=lambda: webbrowser.open("https://ham-map.com/"))
 reference_menu.add_command(label="WWFF Announce activation", command=lambda: webbrowser.open("https://www.cqgma.org/alertwwfflight.php"))
+reference_menu.add_separator()
+reference_menu.add_command(label="WW BOTA Map", command=lambda: webbrowser.open("https://wwbota.org/map/"))
 #reference_menu.add_separator()
 #reference_menu.add_command(label="SOTA Watch", command=lambda: webbrowser.open("https://sotawatch.sota.org.uk/"))
 menu_bar.add_cascade(label="References", menu=reference_menu)
@@ -5264,8 +5490,6 @@ comment_entry.bind("<FocusOut>", reset_focus_color)
 
 
 
-
-# Notebook direct onder root (zonder LabelFrame)
 notebook = ttk.Notebook(root)
 notebook.grid(row=WWFFPOTA_Frame_row, column=0, columnspan=99, sticky='nsew', padx=5, pady=Frame_Y_Padding)
 
@@ -5274,10 +5498,8 @@ wwff_tab = tk.Frame(notebook)
 notebook.add(wwff_tab, text="WWFF")
 
 wwff_tab.grid_columnconfigure(0, weight=0, minsize=70)
-wwff_tab.grid_columnconfigure(1, weight=0, minsize=50)
-wwff_tab.grid_columnconfigure(2, weight=0, minsize=50)
-wwff_tab.grid_columnconfigure(3, weight=0, minsize=50)
-wwff_tab.grid_columnconfigure(4, weight=1)
+wwff_tab.grid_columnconfigure(1, weight=1)
+wwff_tab.grid_columnconfigure(2, weight=0)
 
 tk.Label(wwff_tab, text="Ref no.:", font=('Arial', 10)).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
 wwff_entry = tk.Entry(wwff_tab, textvariable=wwff_var, font=('Arial', 14, 'bold'), width=10)
@@ -5285,8 +5507,12 @@ wwff_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 wwff_entry.bind("<FocusIn>", set_focus_color)
 wwff_entry.bind(
     "<FocusOut>",
-    lambda e: auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, callsign_var)
+    lambda e: auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, wwff_lat_var, wwff_long_var, callsign_var)
 )
+
+wwff_map_button = tk.Button(wwff_tab, text="Show Park on Map", 
+                            command=lambda: open_osm_map(    wwff_lat_var, wwff_long_var, my_locator_var, my_callsign_var, wwff_var.get(), wwff_park_name_var.get()))
+wwff_map_button.grid(row=0, column=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
 
 tk.Label(wwff_tab, text="Park Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
 tk.Label(wwff_tab, textvariable=wwff_park_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=5, sticky='w')
@@ -5312,24 +5538,13 @@ tk.Label(pota_tab, text="Park Name:", font=('Arial', 10)).grid(row=1, column=0, 
 tk.Label(pota_tab, textvariable=pota_park_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=5, sticky='w')
 
 
-def open_google_maps(bota_lat_var, bota_long_var):
-    lat = bota_lat_var.get().strip()
-    lon = bota_long_var.get().strip()
-    if lat and lon:
-        url = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
-        webbrowser.open(url)
-    else:
-        tk.messagebox.showwarning("No Coördinates", "No valid coördinates found.")
-
-
-
 # BOTA tab
 bota_tab = tk.Frame(notebook)
 notebook.add(bota_tab, text="BOTA")
 
 bota_tab.grid_columnconfigure(0, weight=0, minsize=70)
 bota_tab.grid_columnconfigure(1, weight=1)
-bota_tab.grid_columnconfigure(2, weight=0)  # extra kolom voor button
+bota_tab.grid_columnconfigure(2, weight=0)
 
 tk.Label(bota_tab, text="Ref no.:", font=('Arial', 10)).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
 bota_entry = tk.Entry(bota_tab, textvariable=bota_var, font=('Arial', 14, 'bold'), width=10)
@@ -5340,9 +5555,8 @@ bota_entry.bind(
     lambda e: auto_fill_bota_prefix(bota_var, bota_name_var, bota_lat_var, bota_long_var, callsign_var)
 )
 
-# Button naast bota_entry
-bota_map_button = tk.Button(bota_tab, text="Show Bunker on Google Maps", 
-                            command=lambda: open_google_maps(bota_lat_var, bota_long_var))
+bota_map_button = tk.Button(bota_tab, text="Show Bunker on Map", 
+                            command=lambda: open_osm_map(bota_lat_var, bota_long_var, my_locator_var, my_callsign_var, bota_var.get(), bota_name_var.get()))
 bota_map_button.grid(row=0, column=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
 
 tk.Label(bota_tab, text="Bunker Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
@@ -5350,21 +5564,8 @@ tk.Label(bota_tab, textvariable=bota_name_var, font=('Arial', 10, 'bold')).grid(
 
 
 
-'''
-# COTA tab
-cota_tab = tk.Frame(notebook)
-notebook.add(pota_tab, text="COTA")
 
-# SOTA tab
-sota_tab = tk.Frame(notebook)
-notebook.add(pota_tab, text="SOTA")
 
-# IOTA tab
-iota_tab = tk.Frame(notebook)
-notebook.add(pota_tab, text="IOTA")
-'''
-
-# Maak het notebook aan (tabbladcontainer)
 notebook = ttk.Notebook(root)
 notebook.grid(row=DXCC_QRZ_Info_row, column=0, columnspan=99, sticky='nsew', padx=5, pady=5)
 
@@ -5378,7 +5579,6 @@ qrz_tab = tk.Frame(notebook, bg=bg_color)
 notebook.add(qrz_tab, text="Extra QRZ Lookup results")
 
 
-# --- Vul dxcc_tab met de inhoud van dxcc_frame ---
 # Country/Continent label
 country_continent_label = tk.Label(dxcc_tab, text="----", font=('Arial', 14, 'bold'), bg=bg_color)
 country_continent_label.grid(row=0, column=0, sticky='ew', pady=(0, 5))
@@ -5418,8 +5618,6 @@ heading_frame.grid_columnconfigure(0, weight=1)
 heading_label = tk.Label(heading_frame, text="----", font=('Arial', 16, 'bold'), bg=bg_color)
 heading_label.grid(row=0, column=0, sticky='nsew')
 
-
-# --- Vul qrz_tab met de inhoud van QRZ_info_frame ---
 tk.Label(qrz_tab, text="Address:", font=('Arial', 10)).grid(row=0, column=0, sticky='e', padx=5, pady=Internal_Y_Padding)
 address_entry = tk.Entry(qrz_tab, textvariable=address_var, font=('Arial', 10, 'bold'), width=30)
 address_entry.grid(row=0, column=1, columnspan=2, padx=5, pady=Internal_Y_Padding, sticky='w')
@@ -5448,7 +5646,6 @@ qsl_info_entry.bind("<FocusIn>", set_focus_color)
 qsl_info_entry.bind("<FocusOut>", reset_focus_color)
 qsl_info_entry.configure(takefocus=False)
 
-# Kolombreedtes en layout fine-tuning
 qrz_tab.grid_columnconfigure(0, weight=0, minsize=70)
 qrz_tab.grid_columnconfigure(1, weight=0, minsize=80)
 qrz_tab.grid_columnconfigure(2, weight=0, minsize=10)
