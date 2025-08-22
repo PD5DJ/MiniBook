@@ -113,6 +113,12 @@
 #                           - Added lookup for Park/Bunker names
 # 10-08-2025    :           - Changed filepath structure
 # 11-08-2025    :   1.4.4   - Added mapping option to view references on map
+# 17-08-2025    :   1.4.5   - Major Update!
+#                           - Added IOTA/SOTA/WLOTA
+#                           - Added Owner information for contest ADIF Export
+#                           - Simple Serial contest logging added
+#                           - Added menu Radio, Frequency & Mode Polling moved.
+#                           - Duplicate finder upgraded.
 #**********************************************************************************************************************************
 
 from datetime import datetime, timedelta, date
@@ -148,20 +154,37 @@ import traceback
 # ------- Set True if you want to print system wide debug information -------
 DEBUG               = False
 
-VERSION_NUMBER = ("v1.4.4")
+VERSION_NUMBER = ("v1.4.5")
 
 # Configuration file path
 SETTINGS_FOLDER     = Path.cwd() / "settings"
 DATA_FOLDER         = Path.cwd() / "data"
 
 CONFIG_FILE         = SETTINGS_FOLDER / "minibook.ini"
+
 DXCC_FILE           = DATA_FOLDER / "cty.dat"
+ctydat_url            = "https://www.country-files.com/bigcty/cty.dat"
+dxcc_data = []
+
 WWFF_FILE           = DATA_FOLDER / "wwff_directory.csv"
+wwff_references = {}
+wwffref_url = "https://wwff.co/wwff-data/wwff_directory.csv"
+
 POTA_FILE           = DATA_FOLDER / "all_parks.csv"
 POTA_MAP_FILE       = DATA_FOLDER / "dxcc_to_pota_map.json"
+pota_references = {}
+pota_url = "https://pota.app/all_parks.csv"
+
 BOTA_FILE           = DATA_FOLDER / "wwbota.csv"
+bota_references = {}
+bota_url = "https://drive.usercontent.google.com/u/0/uc?id=1wZAOObnUmJTXFYPCAAqQPHgOnT3gaMa7&export=download"
+
 SAT_FILE            = DATA_FOLDER / "satellites.txt"
 current_json_file   = None  # logbook file
+# ----------------- IOTA References -----------------
+IOTA_FILE = DATA_FOLDER / "fulllist.json"
+iota_url  = "https://www.iota-world.org/islands-on-the-air/downloads/download-file.html?path=fulllist.json"
+iota_references = {}
 
 
 # Global variables
@@ -186,18 +209,14 @@ last_passband = 0
 # -------- RST Sent/Received options -------
 rst_options         = [str(i) for i in range(51, 60)] + ["59+10dB", "59+20dB", "59+30dB", "59+40dB"]
 
-# will be filled later with data from cty.dat
-dxcc_data = []
-ctydat_url            = "https://www.country-files.com/bigcty/cty.dat"
 
-wwff_references = {}
-wwffref_url = "https://wwff.co/wwff-data/wwff_directory.csv"
 
-pota_references = {}
-pota_url = "https://pota.app/all_parks.csv"
 
-bota_references = {}
-bota_url = "https://drive.usercontent.google.com/u/0/uc?id=1wZAOObnUmJTXFYPCAAqQPHgOnT3gaMa7&export=download"
+
+
+
+
+
 
 #########################################################################################
 #  ___ _   _ _  _  ___ _____ ___ ___  _  _ ___ 
@@ -240,10 +259,10 @@ def open_dxspotviewer():
     dxspotviewer_window.resizable(False, False)
 
     def get_last_qso_callsign():
-        return callsign_var.get().strip()
+        return qso_callsign_var.get().strip()
 
     def get_current_frequency():
-        return frequency_var.get().strip()
+        return qso_frequency_var.get().strip()
 
     launch_dx_spot_viewer(
         rigctl_host=hamlib_ip_var.get().strip() or "127.0.0.1",
@@ -275,37 +294,48 @@ def no_file_loaded():
 
     current_json_file = None # Reset the current_json_file to None
     update_title(root, VERSION_NUMBER, "Load or create logbook first!", radio_status_var.get())
-    my_locator_var.set("")
-    my_callsign_var.set("")
-    my_operator_var.set("")
-    my_location_var.set("")
+    station_locator_var.set("")
+    station_callsign_var.set("")
+    station_operator_var.set("")
+    station_location_var.set("")
+    station_bota_var.set("")
+    station_cota_var.set("")
+    station_iota_var.set("")
+    station_pota_var.set("")
+    station_sota_var.set("")
+    station_wlota_var.set("")
+    station_wwff_var.set("")
 
-    my_callsign_entry.config(textvariable=my_callsign_var)
-    my_operator_entry.config(textvariable=my_operator_var)
-    my_locator_entry.config(textvariable=my_locator_var)
-    my_location_entry.config(textvariable=my_location_var)
-    my_wwff_entry.config(textvariable=my_wwff_var)
-    my_pota_entry.config(textvariable=my_pota_var)
-    my_bota_entry.config(textvariable=my_bota_var)
+
+    station_callsign_entry.config(textvariable=station_callsign_var)
+    station_operator_entry.config(textvariable=station_operator_var)
+    station_locator_entry.config(textvariable=station_locator_var)
+    station_wwff_entry.config(textvariable=station_wwff_var)
+    station_pota_entry.config(textvariable=station_pota_var)
+    station_bota_entry.config(textvariable=station_bota_var)
+    station_cota_entry.config(textvariable=station_cota_var)
+    station_wlota_entry.config(textvariable=station_wlota_var)
+    station_iota_entry.config(textvariable=station_iota_var)
+    station_sota_entry.config(textvariable=station_sota_var)
 
     file_menu.entryconfig("Station setup", state="disabled")
 
 
 # Function to restore fields after logging or wiping
 def reset_fields():
-    comment_var.set("")
+    qso_comment_var.set("")
     last_qso_label.config(text="")
     QRZ_status_label.config(text="")
-    callsign_var.set("")
-    name_var.set("")
-    city_var.set("")
-    zipcode_var.set("")
-    address_var.set("")
-    qsl_info_var.set("")
-    satellite_var.set("")
-    submode_var.set("")
+    qso_callsign_var.set("")
+    qso_name_var.set("")
+    qrz_city_var.set("")
+    qrz_zipcode_var.set("")
+    qrz_address_var.set("")
+    qrz_qsl_info_var.set("")
+    qso_satellite_var.set("")
+    qso_submode_var.set("")
     on_mode_change() 
-    locator_var.set("")    
+    qso_locator_var.set("")    
     callsign_entry.focus_set()
     wwff_var.set("")
     wwff_park_name_var.set("")
@@ -313,19 +343,30 @@ def reset_fields():
     pota_park_name_var.set("")
     bota_name_var.set("")
     bota_var.set("")
+    iota_var.set("")
+    iota_name_var.set("")
+    sota_var.set("")
+    wlota_var.set("")
+    bota_var.set("")
+    cota_var.set("")
+    qso_receive_exchange_var.set("")
 
 
 
 # Function to clear My Station Parameters in GUI
 def clear_station_labels():
     # Clear station info StringVars
-    my_callsign_var.set("")
-    my_operator_var.set("")
-    my_locator_var.set("")
-    my_location_var.set("")
-    my_wwff_var.set("")
-    my_pota_var.set("")
-    my_bota_var.set("")
+    station_callsign_var.set("")
+    station_operator_var.set("")
+    station_locator_var.set("")
+    station_location_var.set("")
+    station_wwff_var.set("")
+    station_pota_var.set("")
+    station_bota_var.set("")
+    station_cota_var.set("")
+    station_iota_var.set("")
+    station_wlota_var.set("")
+    station_sota_var.set("")
 
 
 
@@ -394,9 +435,9 @@ def maidenhead_to_latlon(locator):
     
 
 # Opens OpenStreetMap and shows pins on map with reference number and name, with a line showing distance in tooltip
-def open_osm_map(lat_var, long_var, my_locator_var, my_callsign_var, ref, name):
-    my_lat, my_lon = maidenhead_to_latlon(my_locator_var.get())
-    my_callsign = my_callsign_var.get().strip().upper()
+def open_osm_map(lat_var, long_var, station_locator_var, station_callsign_var, ref, name):
+    station_lat, station_lon = maidenhead_to_latlon(station_locator_var.get())
+    station_callsign = station_callsign_var.get().strip().upper()
 
     lat = lat_var.get().strip()
     lon = long_var.get().strip()
@@ -432,7 +473,7 @@ def open_osm_map(lat_var, long_var, my_locator_var, my_callsign_var, ref, name):
         <body>
           <div id="map"></div>
           <script>
-            var map = L.map('map').setView([{my_lat}, {my_lon}], 10);
+            var map = L.map('map').setView([{station_lat}, {station_lon}], 10);
 
             // Baselayers
             var osm = L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
@@ -472,9 +513,9 @@ def open_osm_map(lat_var, long_var, my_locator_var, my_callsign_var, ref, name):
               shadowSize:   [41, 41]
             }});
 
-            var marker1 = L.marker([{my_lat}, {my_lon}], {{icon: blueIcon}})
+            var marker1 = L.marker([{station_lat}, {station_lon}], {{icon: blueIcon}})
                 .addTo(map)
-                .bindPopup('Your Location:<br><b>{my_callsign}</b>')
+                .bindPopup('Your Location:<br><b>{station_callsign}</b>')
                 .openPopup();
 
             var marker2 = L.marker([{lat}, {lon}], {{icon: redIcon}})
@@ -483,13 +524,13 @@ def open_osm_map(lat_var, long_var, my_locator_var, my_callsign_var, ref, name):
                 .openPopup();
 
             var latlngs = [
-                [{my_lat}, {my_lon}],
+                [{station_lat}, {station_lon}],
                 [{lat}, {lon}]
             ];
             var polyline = L.polyline(latlngs, {{color: 'green'}}).addTo(map);
 
             var distance = map.distance(
-                L.latLng({my_lat}, {my_lon}),
+                L.latLng({station_lat}, {station_lon}),
                 L.latLng({lat}, {lon})
             ) / 1000;
             distance = distance.toFixed(1);
@@ -584,13 +625,13 @@ band_to_frequency = {
 
 
 def on_mode_change(event=None):
-    selected_mode = mode_var.get().upper()
+    selected_mode = qso_mode_var.get().upper()
     if selected_mode in ["CW", "CW-R", "RTTY", "OLIVIA", "PSK31", "PSK64", "PSK125", "MFSK", "DOMINO", "VARA", "SSTV"]:
-        rst_sent_var.set("599")
-        rst_received_var.set("599")
+        qso_rst_sent_var.set("599")
+        qso_rst_received_var.set("599")
     else:
-        rst_sent_var.set(rst_options[8])
-        rst_received_var.set(rst_options[8])
+        qso_rst_sent_var.set(rst_options[8])
+        qso_rst_received_var.set(rst_options[8])
 
 
 def download_satellites():
@@ -717,102 +758,74 @@ def calculate_headings(lat1, lon1, lat2, lon2):
 #                                                            
 #########################################################################################
 
-# Function to create a new JSON file with "Station" and "Logbook" structure
 def create_new_json():
-    global current_json_file, Logbook_Window, logbook_window_open
+    global current_json_file, Logbook_Window, logbook_window_open, qso_lines, duplicate_index_map, tree_to_log_index
 
     if current_json_file:
-        response = messagebox.askquestion("Confirmation", "This wil close the currently loaded logbook\n\nAre you sure?")
-        
+        response = messagebox.askquestion("Confirmation", "This will close the currently loaded logbook\n\nAre you sure?")
         if response == 'no':
             return
 
-    # Clear loaded json file
-    no_file_loaded()
+    # Clear loaded json file and all related data
+    no_file_loaded()  # reset any state in your existing function
+    qso_lines = []
+    duplicate_index_map = {}
+    tree_to_log_index = {}
 
-    # Check if the logbook window is open, and close it if necessary
+    # Close logbook window if open
     if Logbook_Window is not None and Logbook_Window.winfo_exists():
-        # Close the logbook window
         Logbook_Window.destroy()
-        Logbook_Window = None  # Reset the logbook window reference
+        Logbook_Window = None
 
+    # Ask for new file path
     current_json_file = filedialog.asksaveasfilename(defaultextension=".mbk", filetypes=[("MiniBook files", "*.mbk")])
-    if current_json_file:
-        # Initialize JSON structure with Station and an empty Logbook
-        data = {
-            "Station": {
-                "Callsign": "N0CALL",  # Add your default station callsign or leave blank
-                "Operator": "N0CALL",
-                "Locator": "AA11BB",  # Placeholder, adjust as needed
-                "Location": "",
-                "WWFF": "",
-                "POTA": "",
-                "BOTA": "",
-                "QRZAPI": "",
-                "QRZUpload": ""
-            },
-            "Logbook": []
-        }
-        with open(current_json_file, 'w') as file:
-            json.dump(data, file, indent=4)  # Save initial structure with indentation
-        update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
+    if not current_json_file:
+        return
 
-        load_station_setup()
-        file_menu.entryconfig("Station setup", state="normal")
-
-# Helper function to convert old logbook format (list) to new format (dictionary)
-def convert_old_logbook(old_logbook):
-    # Create a template for the new format with Station info
-    new_format = {
+    # Initialize JSON structure
+    data = {
         "Station": {
             "Callsign": "N0CALL",
             "Operator": "N0CALL",
-            "Locator": "AA11BB",  # Placeholder, adjust as needed
+            "Locator": "AB01CD",
             "Location": "",
-            "WWFF": "",
-            "POTA": "",
+            "Name" : "",
+            "Street": "",
+            "Postalcode": "",
+            "City": "",
+            "County": "",
+            "Country": "",
+            "CQ Zone": "",
+            "ITU Zone": "",
+            "Contest": "",
             "BOTA": "",
+            "COTA": "",
+            "IOTA": "",
+            "POTA": "",
+            "SOTA": "",
+            "WLOTA": "",
+            "WWFF": "",
             "QRZAPI": "",
-            "QRZUpload": ""            
+            "QRZUpload": ""
         },
         "Logbook": []
     }
 
-    # Convert each entry to the new format
-    for entry in old_logbook:
-        new_entry = {
-            "Date": entry.get("Date", ""),
-            "Time": entry.get("Time", ""),
-            "Callsign": entry.get("Callsign", ""),
-            "Name": entry.get("Name", ""),
-            "My_Callsign": entry.get("Station_Callsign", ""),
-            "My_Operator": "",
-            "My_Locator": "",
-            "My_Location": "",
-            "My_WWFF": "",
-            "MY_POTA": "",
-            "MY_BOTA": "",
-            "Country": entry.get("Country", ""),
-            "Continent": entry.get("Continent", ""),
-            "Sent": entry.get("Sent", ""),
-            "Received": entry.get("Received", ""),
-            "Mode": entry.get("Mode", ""),
-            "Submode": "",
-            "Band": entry.get("Band", ""),
-            "Frequency": entry.get("Frequency", ""),
-            "Locator": entry.get("Locator", ""),
-            "Comment": entry.get("Comment", ""),
-            "WWFF": entry.get("WWFF", ""),
-            "POTA": entry.get("POTA", ""),
-            "BOTA": entry.get("BOTA", ""),
-            "Satellite": ""
-        }
-        new_format["Logbook"].append(new_entry)
+    # Save the new JSON
+    with open(current_json_file, 'w', encoding='utf-8') as file:
+        json.dump(data, file, indent=4)
 
-    return new_format
+    # Update GUI title and load station setup
+    update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
+    load_station_setup()
+    file_menu.entryconfig("Station setup", state="normal") 
+
+
 
 
 def load_last_logbook_on_startup():
+    global Logbook_Window, logbook_window_open, qso_lines, duplicate_index_map, tree_to_log_index, current_json_file
+
     # Check if reload is enabled in config
     reload_enabled = config.getboolean('General', 'reload_last_logbook', fallback=False)
     if not reload_enabled:
@@ -821,10 +834,19 @@ def load_last_logbook_on_startup():
     # Proceed if there's a file to load
     last_file = config.get('General', 'last_loaded_logbook', fallback=None)
     if last_file and os.path.exists(last_file):
+        # Clear old logbook data
+        qso_lines = []
+        duplicate_index_map = {}
+        tree_to_log_index = {}
+        current_json_file = None
+
+        # Close logbook window if open
+        if Logbook_Window is not None and Logbook_Window.winfo_exists():
+            Logbook_Window.destroy()
+            Logbook_Window = None
+
+        # Load the last JSON file
         load_json(last_file)
-
-
-
 
 
 
@@ -832,36 +854,44 @@ def load_last_logbook_on_startup():
 
 # Function to load an existing JSON file
 def load_json(file_to_load=None):
-    global current_json_file, Logbook_Window, qso_lines
+    global current_json_file, Logbook_Window, qso_lines, duplicate_index_map, tree_to_log_index
 
-    # If a file is already loaded and no new one was passed in, confirm with user
+    # --- Reset old logbook data and UI first ---
+    qso_lines = []
+    duplicate_index_map = {}
+    tree_to_log_index = {}
+
+    if Logbook_Window is not None and Logbook_Window.winfo_exists():
+        Logbook_Window.destroy()
+        Logbook_Window = None
+
+    reset_fields()
+    clear_station_labels()
+    workedb4_tree.delete(*workedb4_tree.get_children())
+    current_json_file = ""
+
+    # --- If a file is already loaded and no new one was passed in, confirm with user ---
     if current_json_file and not file_to_load:
-        confirm = messagebox.askyesno("Confirm", "A file is already loaded. Do you want to load a new file?")
+        confirm = messagebox.askyesno(
+            "Confirm",
+            "A file is already loaded. Do you want to load a new file?"
+        )
         if not confirm:
-            reset_fields()
             return
 
-        reset_fields()
-        clear_station_labels()
-        current_json_file = ""
-        qso_lines = []
-        workedb4_tree.delete(*workedb4_tree.get_children())
-        update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
+        try:
+            use_serial_var.set(False)
+            qso_sent_exchange_var.set("1")
+            toggle_serial_fields()
+        except NameError:
+            print("DEBUG: use_serial_var or entries not defined yet")
 
-        if Logbook_Window:
-            Logbook_Window.destroy()
-            Logbook_Window = None
-
-    # Use file passed in or ask the user to select one
-    if file_to_load:
-        selected_file = file_to_load
-    else:
-        selected_file = filedialog.askopenfilename(filetypes=[("MiniBook files", "*.mbk")])
-
+    # --- Determine file to load ---
+    selected_file = file_to_load or filedialog.askopenfilename(filetypes=[("MiniBook files", "*.mbk")])
     if not selected_file:
         return  # User cancelled
 
-    # Check if backup folder is configured and exists BEFORE assigning current_json_file
+    # --- Backup folder check ---
     backup_dir = config.get("General", "backup_folder", fallback="").strip()
     if not backup_dir or not os.path.exists(backup_dir):
         if messagebox.askokcancel(
@@ -869,132 +899,73 @@ def load_json(file_to_load=None):
             "No valid backup folder is configured.\nWould you like to open Preferences now to set one?"
         ):
             root.after(100, open_preferences)
-        return  # Stop loading process entirely
+        return
 
-    # Everything is OK — now commit to using this file
     current_json_file = selected_file
 
+    # --- Backup current file ---
+    try:
+        from datetime import datetime
+        os.makedirs(backup_dir, exist_ok=True)
+        base_name = os.path.basename(current_json_file)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"{timestamp}_{base_name}"
+        backup_path = os.path.join(backup_dir, backup_filename)
 
-    if current_json_file:
-  
-        # Create a backup in user-defined folder
-        try:
-            from datetime import datetime
+        with open(current_json_file, 'r', encoding='utf-8') as original, \
+             open(backup_path, 'w', encoding='utf-8') as backup:
+            backup.write(original.read())
 
-            os.makedirs(backup_dir, exist_ok=True)
+        # Limit to 5 backups
+        MAX_BACKUPS = 5
+        all_backups = sorted(
+            [f for f in os.listdir(backup_dir) if f.endswith(base_name) and f.count("_") >= 1],
+            reverse=True
+        )
+        for old_file in all_backups[MAX_BACKUPS:]:
+            try:
+                os.remove(os.path.join(backup_dir, old_file))
+            except Exception as e:
+                print(f"Could not remove old backup: {e}")
 
-            # Create timestamped backup filename
-            base_name = os.path.basename(current_json_file)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_filename = f"{timestamp}_{base_name}"
-            backup_path = os.path.join(backup_dir, backup_filename)
+    except Exception as e:
+        print(f"Backup failed: {e}")
 
-            # Write the backup
-            with open(current_json_file, 'r', encoding='utf-8') as original, open(backup_path, 'w', encoding='utf-8') as backup:
-                backup.write(original.read())
+    # --- Load JSON content ---
+    try:
+        with open(current_json_file, 'r', encoding='utf-8') as file:
+            data = json.load(file)
+            print("DEBUG: JSON file loaded successfully")
 
-            # Limit to 5 backups per unique logbook file
-            MAX_BACKUPS = 5
-            all_backups = [
-                f for f in os.listdir(backup_dir)
-                if f.endswith(base_name) and f.count("_") >= 1
-            ]
-
-            # Sort backups by timestamp (descending)
-            matching_backups = sorted(all_backups, reverse=True)
-
-            for old_file in matching_backups[MAX_BACKUPS:]:
-                try:
-                    os.remove(os.path.join(backup_dir, old_file))
-                except Exception as e:
-                    print(f"Could not remove old backup: {e}")
-
-        except Exception as e:
-            print(f"Backup failed: {e}")
-
-
-
-############ DEBUG PART
-        try:
-            with open(current_json_file, 'r', encoding='utf-8') as file:
-                data = json.load(file)
-                print("----------")
-                print("DEBUG: JSON file loaded successfully")
-
-                # Handle legacy format (flat list)
-                if isinstance(data, list):
-                    print("DEBUG: Detected legacy format (list)")
-
-                    convert_confirm = messagebox.askyesno("Convert Old Format", "Old Logbook format detected! Do you want to convert it to the new format?")
-                    if convert_confirm:
-                        print("DEBUG: User confirmed conversion")
-
-                        data = convert_old_logbook(data)
-                        new_file_path = filedialog.asksaveasfilename(defaultextension=".mbk", filetypes=[("MiniBook files", "*.mbk")])
-                        if new_file_path:
-                            print(f"DEBUG: Saving converted file to {new_file_path}")
-                            with open(new_file_path, 'w', encoding='utf-8') as new_file:
-                                json.dump(data, new_file, indent=4)
-                            messagebox.showinfo("Conversion Successful", "The logbook has been converted and saved.")
-                            current_json_file = new_file_path
-                            update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
-                            reset_fields()
-                            load_station_setup()
-                            file_menu.entryconfig("Station setup", state="normal")
-                        else:
-                            print("DEBUG: User cancelled saving converted file")
-                            messagebox.showinfo("Save Cancelled", "The converted file was not saved.")
-                            current_json_file = ""
-                            no_file_loaded()
-                    else:
-                        print("DEBUG: User declined conversion")
-                        current_json_file = ""
-                        no_file_loaded()
-                    return
-
-                # Handle modern format with Station and Logbook keys
-                elif isinstance(data, dict):
-                    print("DEBUG: Detected modern format (dict)")
-                    if "Station" in data and "Logbook" in data and isinstance(data["Logbook"], list):
-                        print("DEBUG: Valid Station and Logbook keys found")
-                        station_info = data["Station"]
-                        if "Callsign" in station_info and "Locator" in station_info:
-                            print("DEBUG: Station info contains Callsign and Locator")
-                            update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
-                            reset_fields()
-                            load_station_setup()
-                            file_menu.entryconfig("Station setup", state="normal")
-                        else:
-                            print("ERROR: Missing Callsign or Locator in Station info")
-                            messagebox.showerror("Invalid Format", "Missing required fields in 'Station' section.")
-                            current_json_file = ""
-                            no_file_loaded()
-                    else:
-                        print("ERROR: Invalid structure in modern format")
-                        messagebox.showerror("Invalid Format", "The file does not contain a valid logbook structure.")
-                        current_json_file = ""
-                        no_file_loaded()
-
-                # Save the path to config
-                if current_json_file:
-                    print(f"DEBUG: Saving last loaded path: {current_json_file}")
-                    config.set('General', 'last_loaded_logbook', current_json_file)
-                    file_path = CONFIG_FILE
-                    with open(file_path, 'w') as configfile:
-                        config.write(configfile)
-
-                    load_json_content()
-
-        except Exception as e:
-            print("ERROR: Exception during logbook loading:")
-            traceback.print_exc()
-            messagebox.showerror("Error", f"Could not read the file:\n{str(e)}")
-            current_json_file = ""
+        # --- Modern format ---
+        if isinstance(data, dict) and "Station" in data and "Logbook" in data and isinstance(data["Logbook"], list):
+            station_info = data["Station"]
+            if "Callsign" in station_info and "Locator" in station_info:
+                update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
+                reset_fields()
+                load_station_setup()
+                file_menu.entryconfig("Station setup", state="normal")
+            else:
+                messagebox.showerror("Invalid Format", "Missing required fields in 'Station' section.")
+                no_file_loaded()
+                return
+        else:
+            messagebox.showerror("Invalid Format", "The file does not contain a valid logbook structure.")
             no_file_loaded()
+            return
 
+        # --- Save last loaded logbook in config ---
+        config.set('General', 'last_loaded_logbook', current_json_file)
+        with open(CONFIG_FILE, 'w') as configfile:
+            config.write(configfile)
 
+        load_json_content()
 
-
+    except Exception as e:
+        print("ERROR: Exception during logbook loading:")
+        traceback.print_exc()
+        messagebox.showerror("Error", f"Could not read the file:\n{str(e)}")
+        no_file_loaded()
 
 
 
@@ -1002,7 +973,7 @@ def load_json(file_to_load=None):
 def load_json_content():
     global tree, qso_count_label, qso_lines
 
-    # Lees JSON bestand altijd in
+    # Always read JSON file
     try:
         with open(current_json_file, 'r', encoding='utf-8') as file:
             data = json.load(file)
@@ -1012,7 +983,7 @@ def load_json_content():
         qso_lines = []
         return
 
-    # Stop hier als tree niet bestaat of al vernietigd is
+    # Stop here if tree doesn't exist or is already destroyed
     if tree is None or not tree.winfo_exists():
         return
 
@@ -1051,7 +1022,9 @@ def load_json_content():
                 qso.get('Name', ''),
                 qso.get('Country', ''),
                 qso.get('Sent', ''),
+                qso.get('Sent Exchange', ''),
                 qso.get('Received', ''),
+                qso.get('Receive Exchange', ''),
                 qso.get('Mode', ''),
                 qso.get('Submode', ''),
                 qso.get('Band', ''),
@@ -1061,6 +1034,10 @@ def load_json_content():
                 qso.get('WWFF', ''),
                 qso.get('POTA', ''),
                 qso.get('BOTA', ''),
+                qso.get('COTA', ''),
+                qso.get('IOTA', ''),
+                qso.get('SOTA', ''),
+                qso.get('WLOTA', ''),
                 qso.get('My Callsign', ''),
                 qso.get('My Operator', ''),
                 qso.get('My Locator', ''),
@@ -1068,6 +1045,10 @@ def load_json_content():
                 qso.get('My WWFF', ''),
                 qso.get('My POTA', ''),
                 qso.get('My BOTA', ''),
+                qso.get('My COTA', ''),
+                qso.get('My IOTA', ''),
+                qso.get('My SOTA', ''),
+                qso.get('My WLOTA', ''),
                 qso.get('Satellite', '')
             ), tags=(tag,))
 
@@ -1167,7 +1148,7 @@ def view_logbook():
     checkbox_label.pack(side='left')
 
     # Define columns for the logbook
-    columns = ('Date', 'Time', 'Callsign', 'Name', 'Country', 'Sent', 'Received', 'Mode', 'Submode','Band', 'Frequency', 'Locator', 'Comment', 'WWFF', 'POTA', 'BOTA', 'My Callsign', 'My Operator', 'My Locator', 'My Location', 'My WWFF', 'My POTA', 'My BOTA')
+    columns = ('Date', 'Time', 'Callsign', 'Name', 'Country', 'Sent', 'Sent Exchange', 'Received', 'Receive Exchange', 'Mode', 'Submode','Band', 'Frequency', 'Locator', 'Comment', 'WWFF', 'POTA', 'BOTA', 'COTA', 'IOTA', 'SOTA', 'WLOTA', 'My Callsign', 'My Operator', 'My Locator', 'My Location', 'My WWFF', 'My POTA', 'My BOTA', 'My COTA', 'My IOTA', 'My SOTA', 'My WLOTA')
 
     # Add checkboxes for each column
     column_checkboxes = {}
@@ -1455,23 +1436,33 @@ def view_logbook():
         'Name': 60,
         'Country': 130,
         'Sent': 50,
+        'Sent Exchange': 20,
         'Received': 50,
+        'Receive Exchange': 20,
         'Mode': 60,
         'Submode': 60,
         'Band': 50,
         'Frequency': 80,
         'Locator': 60,
         'Comment': 150,
-        'WWFF': 50,
-        'POTA': 50,
-        'BOTA': 50,
+        'WWFF': 20,
+        'POTA': 20,
+        'BOTA': 20,
+        'COTA': 20,
+        'IOTA': 20,
+        'SOTA': 20,
+        'WLOTA': 20,
         'My Callsign': 80,
         'My Operator': 80,
         'My Locator': 70,
         'My Location': 120,
-        'My WWFF': 50,
-        'My POTA': 50,
-        'My BOTA': 50,
+        'My WWFF': 20,
+        'My POTA': 20,
+        'My BOTA': 20,
+        'My COTA': 20,
+        'My IOTA': 20,
+        'My SOTA': 20,
+        'My WLOTA': 50,
         'Satellite': 80
 
     }
@@ -1549,7 +1540,9 @@ def view_logbook():
                     qso.get('Name', ''),
                     qso.get('Country', ''),
                     qso.get('Sent', ''),
+                    qso.get('Sent Exchange', ''),
                     qso.get('Received', ''),
+                    qso.get('Receive Exchange', ''),
                     qso.get('Mode', ''),
                     qso.get('Submode', ''),
                     qso.get('Band', ''),
@@ -1559,6 +1552,10 @@ def view_logbook():
                     qso.get('WWFF', ''),
                     qso.get('POTA', ''),
                     qso.get('BOTA', ''),
+                    qso.get('COTA', ''),
+                    qso.get('IOTA', ''),
+                    qso.get('SOTA', ''),
+                    qso.get('WLOTA', ''),
                     qso.get('My Callsign', ''),
                     qso.get('My Operator', ''),
                     qso.get('My Locator', ''),
@@ -1566,6 +1563,10 @@ def view_logbook():
                     qso.get('My WWFF', ''),
                     qso.get('My POTA', ''),
                     qso.get('My BOTA', ''),
+                    qso.get('My COTA', ''),
+                    qso.get('My IOTA', ''),
+                    qso.get('My SOTA', ''),
+                    qso.get('My WLOTA', ''),
                     qso.get('Satellite', '')
                 ), tags=('oddrow' if row_color else 'evenrow',))
                 row_color = not row_color
@@ -1619,7 +1620,6 @@ def view_logbook():
 #    _____    _     _     _    ___ __ _ ___ __ __
 #   |_  | |\|| \   | \| ||_)|   | /  |_| | |_ (_ 
 #   |  _|_| ||_/   |_/|_||  |___|_\__| | | |____)
-
 def find_duplicates():
     if not qso_lines:
         messagebox.showinfo("Duplicates", "No logbook loaded or empty.")
@@ -1651,28 +1651,26 @@ def find_duplicates():
 
     dup_window = tk.Toplevel(Logbook_Window)
     dup_window.title("Duplicate QSOs Found")
+    dup_window.geometry("700x400")
 
-    tree_dup = ttk.Treeview(dup_window, columns=("Index", "Callsign", "Date", "Time", "Mode", "Frequency"), show="headings", selectmode="extended")
-    tree_dup.heading("Index", text="Index")
-    tree_dup.heading("Callsign", text="Callsign")
-    tree_dup.heading("Date", text="Date")
-    tree_dup.heading("Time", text="Time")
-    tree_dup.heading("Mode", text="Mode")
-    tree_dup.heading("Frequency", text="Frequency")
+    # Frame for Treeview + scrollbar
+    frame = tk.Frame(dup_window)
+    frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
+    tree_dup = ttk.Treeview(frame, columns=("Index", "Callsign", "Date", "Time", "Mode", "Frequency"), show="headings", selectmode="extended")
     for col in ("Index", "Callsign", "Date", "Time", "Mode", "Frequency"):
+        tree_dup.heading(col, text=col)
         tree_dup.column(col, anchor="center")
-        tree_dup.heading(col, text=col, anchor="center")
 
-    tree_dup.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree_dup.yview)
+    tree_dup.configure(yscrollcommand=scrollbar.set)
+    scrollbar.pack(side="right", fill="y")
+    tree_dup.pack(side="left", fill=tk.BOTH, expand=True)
 
     tree_to_log_index = {}
     color_styles = ["lightblue", "white", "lightgreen", "lightyellow", "lightpink", "lavender", "lightgray"]
-
     for i, color in enumerate(color_styles):
-        tag_name = f"tag_{i}"
-        tree_dup.tag_configure(tag_name, background=color)
-        
+        tree_dup.tag_configure(f"tag_{i}", background=color)
 
     for group_index, (key, indices) in enumerate(duplicate_index_map.items()):
         tag_name = f"tag_{group_index % len(color_styles)}"
@@ -1704,12 +1702,33 @@ def find_duplicates():
         dup_window.destroy()
         messagebox.showinfo("Done", f"{len(indices_to_delete)} duplicates removed and saved.")
 
+    def delete_all_duplicates_keep_best():
+        fields_to_consider = ["Callsign", "Date", "Time", "Mode", "Frequency", "Name", "My Locator", "My Location"]
+        to_delete_all = []
+
+        for key, indices in duplicate_index_map.items():
+            # Find record with most filled in fields in the given fields
+            best_idx = max(indices, key=lambda i: sum(1 for f in fields_to_consider if qso_lines[i].get(f)))
+            # Add all other indexes to the delete list
+            to_delete_all.extend(i for i in indices if i != best_idx)
+
+        # Remove all at once, from high to low
+        for i in sorted(to_delete_all, reverse=True):
+            try:
+                del qso_lines[i]
+            except IndexError:
+                continue
+
+        save_to_json()
+        load_json_content()
+        dup_window.destroy()
+        messagebox.showinfo("Done", f"{len(to_delete_all)} duplicate QSOs removed, best entries kept.")
 
 
+    # Buttons
     tk.Button(dup_window, text="Delete Selected", command=delete_selected_duplicates).pack(pady=5)
+    tk.Button(dup_window, text="Delete Duplicates / Best kept", command=delete_all_duplicates_keep_best).pack(pady=5)
     tk.Button(dup_window, text="Close", command=dup_window.destroy).pack(pady=5)
-
-
 
 
 
@@ -1764,7 +1783,7 @@ def open_bulk_edit_window():
 
     uppercase_fields = [
         "Callsign", "Locator", "My Callsign", "My Operator", "My Locator",
-        "My WWFF", "My POTA", "My BOTA", "Continent", "Mode", "Submode", "WWFF", "POTA", "BOTA"
+        "My WWFF", "My POTA", "My BOTA", "My COTA", "My IOTA", "My SOTA", "My WLOTA", "Continent", "Mode", "Submode", "WWFF", "POTA", "BOTA", "COTA", "IOTA", "SOTA", "WLOTA"
     ]
 
     def apply_bulk_edit():
@@ -1869,6 +1888,8 @@ def export_selected_to_adif():
         add_field("name", qso.get("Name", ""))
         add_field("rst_sent", qso.get("Sent", ""))
         add_field("rst_rcvd", qso.get("Received", ""))
+        add_field("stx", qso.get("Sent Exchange", ""))
+        add_field("srx", qso.get("Receive Exchange", ""))
         add_field("mode", qso.get("Mode", ""))
         add_field("submode", qso.get("Submode", ""))
         add_field("band", qso.get("Band", ""))
@@ -1889,7 +1910,19 @@ def export_selected_to_adif():
             add_field("sig_info", qso.get("POTA", ""))
         if qso.get("BOTA"):
             add_field("sig", "BOTA")
-            add_field("sig_info", qso.get("BOTA", ""))            
+            add_field("sig_info", qso.get("BOTA", ""))
+        if qso.get("COTA"):
+            add_field("sig", "COTA")
+            add_field("sig_info", qso.get("COTA", ""))            
+        if qso.get("SOTA"):
+            add_field("sig", "SOTA")
+            add_field("sig_info", qso.get("SOTA", ""))   
+        if qso.get("IOTA"):
+            add_field("sig", "IOTA")
+            add_field("sig_info", qso.get("IOTA", ""))   
+        if qso.get("WLOTA"):
+            add_field("sig", "WLOTA")
+            add_field("sig_info", qso.get("WLOTA", ""))                                                
 
         adif_lines.append(" ".join(adif_line_list) + " <EOR>\n")
 
@@ -1978,13 +2011,13 @@ def edit_qso(event):
     logbook_width = Logbook_Window.winfo_width()
     logbook_height = Logbook_Window.winfo_height()
     edit_width = 550
-    edit_height = 600 if platform.system() == "Darwin" else 550
+    edit_height = 700 if platform.system() == "Darwin" else 600
     edit_x = logbook_x + (logbook_width - edit_width) // 2
     edit_y = logbook_y + (logbook_height - edit_height) // 2
     Edit_Window.geometry(f"{edit_width}x{edit_height}+{edit_x}+{edit_y}")
     Edit_Window.grab_set()
 
-    fields = ['Date', 'Time', 'Callsign', 'Name', 'Country', 'Sent', 'Received', 'Mode', 'Submode', 'Band', 'Frequency', 'Locator', 'Comment', 'WWFF', 'POTA', 'BOTA', 'My Callsign', 'My Operator', 'My Locator', 'My Location', 'My WWFF', 'My POTA', 'My BOTA', 'Satellite']
+    fields = ['Date', 'Time', 'Callsign', 'Name', 'Country', 'Sent', 'Received', 'Sent Exchange', 'Receive Exchange', 'Mode', 'Submode', 'Band', 'Frequency', 'Locator', 'Comment', 'Satellite', 'WWFF', 'POTA', 'BOTA', 'COTA', 'IOTA', 'SOTA', 'WLOTA', 'My Callsign', 'My Operator', 'My Locator', 'My Location', 'My WWFF', 'My POTA', 'My BOTA', 'My COTA', 'My IOTA', 'My SOTA', 'My WLOTA']
     entries = {}
 
     original_qso = next((qso for qso in qso_lines if f"{qso['Callsign']}_{qso['Date']}_{qso['Time']}" == unique_identifier), None)
@@ -2023,9 +2056,9 @@ def edit_qso(event):
         elif field in ['Sent', 'Received']:
             entry = ttk.Combobox(form_frame, values=rst_options, font=('Arial', 10), width=14)
             entry.set(original_qso.get(field, ''))
-
+            
         else:
-            if field in ['WWFF', 'My WWFF', 'POTA', 'My POTA']:
+            if field in ['WWFF', 'My WWFF', 'POTA', 'My POTA', 'IOTA', 'My IOTA', 'SOTA', 'My SOTA', 'WLOTA', 'My WLOTA', 'BOTA', 'My BOTA', 'COTA', 'My COTA']:
                 var = tk.StringVar()
                 var.set(original_qso.get(field, ''))
                 var.trace_add("write", lambda *args, v=var: v.set(v.get().upper()))
@@ -2152,169 +2185,6 @@ def custom_duplicate_dialog(parent, total_count, duplicate_count, added_count):
 # /_/ \_\___/___|_|   |___|_|  |_|_|  \___/|_|_\ |_|  
 #                                                     
 #########################################################################################
-
-def import_adif():
-    global current_json_file
-    if not current_json_file:
-        messagebox.showerror("Error", "No logbook file loaded. Please load a logbook before importing.")
-        return
-
-    adif_file = filedialog.askopenfilename(title="Select ADIF File", filetypes=[("ADIF files", "*.adi"), ("All files", "*.*")])
-    if not adif_file:
-        return
-
-    # Create progress window
-    progress_window = tk.Toplevel(root)
-    progress_window.title("Importing ADIF")
-    progress_window.geometry("400x100")
-    progress_label = tk.Label(progress_window, text="Importing QSOs...")
-    progress_label.pack(pady=5)
-    progress_counter = tk.Label(progress_window, text="")
-    progress_counter.pack()
-    progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
-    progress.pack(pady=5)
-
-    def do_import():
-        try:
-            with open(current_json_file, "r", encoding="utf-8") as json_file:
-                logbook_data = json.load(json_file)
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load logbook: {e}")
-            progress_window.destroy()
-            return
-
-        try:
-            try:
-                with open(adif_file, "r", encoding="utf-8") as f:
-                    content = f.read()
-            except UnicodeDecodeError:
-                with open(adif_file, "r", encoding="latin-1") as f:
-                    content = f.read()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load ADIF file: {e}")
-            progress_window.destroy()
-            return
-
-        qso_records = re.split(r'<eor>', content, flags=re.IGNORECASE)
-        total_qso_count = len(qso_records)
-        progress["maximum"] = total_qso_count
-
-        new_entries = []
-        duplicates = []
-
-        for i, record in enumerate(qso_records, 1):
-            if not record.strip():
-                continue
-
-            sig = extract_field(record, "sig").upper()
-            sig_info = extract_field(record, "sig_info")
-            wwff = sig_info if sig == "WWFF" else ""
-            pota = sig_info if sig == "POTA" else ""
-            bota = sig_info if sig == "BOTA" else ""
-
-            entry = {
-                "Date": import_format_date(extract_field(record, "qso_date")) or "",
-                "Time": import_format_time(extract_field(record, "time_on")) or "",
-                "Callsign": (extract_field(record, "call") or "").upper(),
-                "Name": (extract_field(record, "name") or ""),
-                "My Callsign": (extract_field(record, "station_callsign") or "").upper(),
-                "My Operator": (extract_field(record, "operator") or "").upper(),
-                "My Locator": ("").upper(),
-                "My Location": ("").upper(),
-                "My WWFF": ("").upper(),
-                "My POTA": ("").upper(),
-                "My BOTA": ("").upper(),
-                "Country": extract_field(record, "country") or "",
-                "Continent": (extract_field(record, "cont") or "").upper(),
-                "Sent": extract_field(record, "rst_sent") or "",
-                "Received": extract_field(record, "rst_rcvd") or "",
-                "Mode": extract_field(record, "mode") or "",
-                "Submode": extract_field(record, "submode") or "",
-                "Band": (extract_field(record, "band") or "").lower(),
-                "Frequency": extract_field(record, "freq") or "",
-                "Locator": (extract_field(record, "gridsquare") or "").upper(),
-                "Comment": extract_field(record, "comment") or "",
-                "WWFF": wwff,
-                "POTA": pota,
-                "BOTA": bota,
-                "Satellite": extract_field(record, "sat_name") or ""
-            }
-
-            if extract_field(record, "my_sig") == "POTA":
-                entry["My POTA"] = extract_field(record, "my_sig_info") or ""
-                
-            if extract_field(record, "my_sig") == "BOTA":
-                entry["My BOTA"] = extract_field(record, "my_sig_info") or ""                
-
-            callsign = entry["Callsign"]
-            check_callsign_prefix(callsign, False)
-            if country_var:
-                entry["Country"] = country_var
-            if continent_var:
-                entry["Continent"] = continent_var
-
-            if entry["Callsign"]:
-                is_duplicate = any(
-                    existing_entry["Callsign"] == entry["Callsign"] and
-                    existing_entry["Date"] == entry["Date"] and
-                    existing_entry["Time"] == entry["Time"]
-                    for existing_entry in logbook_data["Logbook"]
-                )
-                if is_duplicate:
-                    duplicates.append(entry)
-                else:
-                    new_entries.append(entry)
-
-            # Update progress bar
-            progress["value"] = i
-            progress_counter.config(text=f"{i} / {total_qso_count} QSOs")
-            progress_window.update_idletasks()
-
-        progress_window.destroy()
-
-        added_count = len(new_entries)
-        action = None
-        if duplicates:
-            duplicate_count = len(duplicates)
-            action = custom_duplicate_dialog(parent=root, total_count=total_qso_count,
-                                             duplicate_count=duplicate_count, added_count=added_count)
-            if action is None:
-                return
-            elif action == "Overwrite":
-                for duplicate_entry in duplicates:
-                    for idx, existing_entry in enumerate(logbook_data["Logbook"]):
-                        if (existing_entry["Callsign"] == duplicate_entry["Callsign"] and
-                            existing_entry["Date"] == duplicate_entry["Date"] and
-                            existing_entry["Time"] == duplicate_entry["Time"]):
-                            logbook_data["Logbook"][idx] = duplicate_entry
-                            break
-            elif action == "Add":
-                new_entries.extend(duplicates)
-                added_count = len(new_entries)
-
-        logbook_data["Logbook"].extend(new_entries)
-
-        try:
-            with open(current_json_file, "w", encoding="utf-8") as json_file:
-                json.dump(logbook_data, json_file, indent=4)
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to save logbook: {e}")
-            return
-
-        for window in root.winfo_children():
-            if isinstance(window, tk.Toplevel) and hasattr(window, 'update_logbook'):
-                window.update_logbook()
-
-        message = f"{added_count} new QSO(s) added to the logbook."
-        if duplicates and action:
-            message = f"{len(duplicates)} duplicate QSO(s) processed. {added_count} new QSO(s) added."
-        messagebox.showinfo("Import ADIF", message)
-
-    # Start the import in a background thread
-    threading.Thread(target=do_import).start()
-
-
-
 def extract_field(record, field_name):
     """
     Extract a field's value from the ADIF record in the format <FIELD_NAME:length>value.
@@ -2340,6 +2210,198 @@ def import_format_time(time_str):
         except ValueError:
             pass  # Ignore formatting if time is invalid
     return None
+
+
+def import_adif():
+    global current_json_file
+    if not current_json_file:
+        messagebox.showerror("Error", "No logbook file loaded. Please load a logbook before importing.")
+        return
+
+    adif_file = filedialog.askopenfilename(title="Select ADIF File", filetypes=[("ADIF files", "*.adi"), ("All files", "*.*")])
+    if not adif_file:
+        return
+
+    progress_window = tk.Toplevel(root)
+    progress_window.title("Importing ADIF")
+    progress_window.geometry("400x100")
+    progress_label = tk.Label(progress_window, text="Importing QSOs...")
+    progress_label.pack(pady=5)
+    progress_counter = tk.Label(progress_window, text="")
+    progress_counter.pack()
+    progress = ttk.Progressbar(progress_window, orient="horizontal", length=300, mode="determinate")
+    progress.pack(pady=5)
+
+    def ask_duplicates_action(count):
+        
+        action_var = tk.StringVar(value="")
+
+        dlg = tk.Toplevel(root)
+        dlg.title("Duplicates found")
+        dlg.grab_set()
+        dlg.transient(root)
+
+        label = tk.Label(dlg, text=f"{count} duplicates found.\nWhat do you want to do?")
+        label.pack(padx=20, pady=10)
+
+        def set_action(value):
+            action_var.set(value)
+            dlg.destroy()
+
+        btn_frame = tk.Frame(dlg)
+        btn_frame.pack(pady=10)
+        tk.Button(btn_frame, text="Add", width=10, command=lambda: set_action("add")).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Overwrite", width=10, command=lambda: set_action("overwrite")).pack(side="left", padx=5)
+        tk.Button(btn_frame, text="Ignore", width=10, command=lambda: set_action("ignore")).pack(side="left", padx=5)
+
+        dlg.wait_window()
+        return action_var.get()
+
+    def do_import():
+        try:
+            with open(current_json_file, "r", encoding="utf-8") as json_file:
+                logbook_data = json.load(json_file)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load logbook: {e}")
+            progress_window.destroy()
+            return
+
+        try:
+            try:
+                with open(adif_file, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except UnicodeDecodeError:
+                with open(adif_file, "r", encoding="latin-1") as f:
+                    content = f.read()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load ADIF file: {e}")
+            progress_window.destroy()
+            return
+
+        qso_records = [r for r in re.split(r'<eor>', content, flags=re.IGNORECASE) if r.strip()]
+        total_qso_count = len(qso_records)
+        progress["maximum"] = total_qso_count
+
+        added_entries = []
+        duplicates = []
+
+        logbook_index = {
+            f"{entry['Callsign']}_{entry['Date']}_{entry['Time']}": entry
+            for entry in logbook_data["Logbook"]
+        }
+
+        for i, record in enumerate(qso_records, 1):
+            callsign = extract_field(record, "call").upper()
+            if not callsign:
+                continue
+
+            entry = {
+                "Date": import_format_date(extract_field(record, "qso_date")) or "",
+                "Time": import_format_time(extract_field(record, "time_on")) or "",
+                "Callsign": callsign,
+                "Name": extract_field(record, "name") or "",
+                "My Callsign": extract_field(record, "station_callsign").upper() or "",
+                "My Operator": extract_field(record, "operator").upper() or "",
+                "My Locator": "",
+                "My Location": "",
+                "My WWFF": extract_field(record, "station_wwff_ref").upper() or "",
+                "My POTA": extract_field(record, "station_pota_ref").upper() or "",
+                "My BOTA": "",
+                "My COTA": "",
+                "My IOTA": extract_field(record, "station_iota").upper() or "",
+                "My SOTA": extract_field(record, "station_sota_ref").upper() or "",
+                "My WLOTA": "",
+                "Country": extract_field(record, "country") or "",
+                "Continent": extract_field(record, "cont").upper() or "",
+                "Sent": extract_field(record, "rst_sent") or "",
+                "Received": extract_field(record, "rst_rcvd") or "",
+                "Sent Exchange": extract_field(record, "stx") or "",
+                "Receive Exchange": extract_field(record, "srx") or "",
+                "Mode": extract_field(record, "mode") or "",
+                "Submode": extract_field(record, "submode") or "",
+                "Band": extract_field(record, "band").lower() or "",
+                "Frequency": extract_field(record, "freq") or "",
+                "Locator": extract_field(record, "gridsquare").upper() or "",
+                "Comment": extract_field(record, "comment") or "",
+                "WWFF": extract_field(record, "wwff_ref").upper() or "",
+                "POTA": extract_field(record, "pota_ref").upper() or "",
+                "BOTA": "",
+                "SOTA": extract_field(record, "sota_ref").upper() or "",
+                "IOTA": extract_field(record, "iota").upper() or "",
+                "WLOTA": "",
+                "Satellite": extract_field(record, "sat_name") or ""
+            }
+
+            station_sig = extract_field(record, "station_sig")
+            station_sig_info = extract_field(record, "station_sig_info")
+            if station_sig == "BOTA":
+                entry["My BOTA"] = station_sig_info
+            elif station_sig == "COTA":
+                entry["My COTA"] = station_sig_info                
+            elif station_sig == "WLOTA":
+                entry["My WLOTA"] = station_sig_info
+
+            key = f"{entry['Callsign']}_{entry['Date']}_{entry['Time']}"
+            if key in logbook_index:
+                duplicates.append((key, entry))
+            else:
+                added_entries.append(entry)
+
+            if i % 50 == 0 or i == total_qso_count:
+                progress["value"] = i
+                progress_counter.config(text=f"{i} / {total_qso_count} QSOs")
+                progress_window.update_idletasks()
+
+        # What to do with duplicates
+        if duplicates:
+            action = ask_duplicates_action(len(duplicates))
+        else:
+            action = "add"
+
+        added_count = len(added_entries)
+        updated_count = 0
+
+        if action == "overwrite":
+            for key, entry in duplicates:
+                logbook_index[key].update(entry)
+                updated_count += 1
+        elif action == "ignore":
+            pass  # duplicates ignore
+        else:  # add
+            for key, entry in duplicates:
+                logbook_data["Logbook"].append(entry)
+                added_count += 1
+
+        logbook_data["Logbook"].extend(added_entries)
+
+        try:
+            with open(current_json_file, "w", encoding="utf-8") as json_file:
+                json.dump(logbook_data, json_file, indent=4)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save logbook: {e}")
+            progress_window.destroy()
+            return
+
+        def refresh_logbooks():
+            for window in root.winfo_children():
+                if isinstance(window, tk.Toplevel) and hasattr(window, 'update_logbook'):
+                    window.update_logbook()
+
+        root.after(0, refresh_logbooks)
+
+        progress_window.destroy()
+        messagebox.showinfo("Import ADIF", f"{added_count} new QSO(s) added.\n{updated_count} existing QSO(s) updated.")
+
+    threading.Thread(target=do_import, daemon=True).start()
+
+
+
+
+
+
+
+
+
 
 
 #########################################################################################
@@ -2375,13 +2437,13 @@ def get_log_type():
         log_type_window.destroy()  # Close the log type selection window
     
     # Add the label text asking "How would you like to export?"
-    label = tk.Label(log_type_window, text="How would you like to export?")
+    label = tk.Label(log_type_window, text="How would you like to export?\nSIG is used for BOTA/COTA/WLOTA")
     label.pack(pady=10)
 
     # Create buttons for each log type
-    tk.Button(log_type_window, text="POTA", command=lambda: set_log_type("POTA")).pack(pady=5)
     tk.Button(log_type_window, text="BOTA", command=lambda: set_log_type("BOTA")).pack(pady=5)
-    tk.Button(log_type_window, text="WWFF", command=lambda: set_log_type("WWFF")).pack(pady=5)
+    #tk.Button(log_type_window, text="COTA", command=lambda: set_log_type("COTA")).pack(pady=5)
+    tk.Button(log_type_window, text="WLOTA", command=lambda: set_log_type("WLOTA")).pack(pady=5)
     tk.Button(log_type_window, text="Normal", command=lambda: set_log_type("Normal")).pack(pady=5)
 
     # Position the window in the center of the parent window with top alignment
@@ -2392,7 +2454,7 @@ def get_log_type():
 
     # Calculate the position for the new window
     window_width = 200
-    window_height = 150
+    window_height = 300
     new_x = parent_x + (parent_width // 2) - (window_width // 2)
     new_y = parent_y  # Align to the top of the parent window
 
@@ -2419,6 +2481,24 @@ def export_to_adif():
     if not log_type:
         return  # User canceled the selection
 
+    # Read Station info once
+    try:
+        with open(current_json_file, "r", encoding="utf-8") as f:
+            json_data = json.load(f)
+            station_info = json_data.get("Station", {})
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to read Station info from JSON: {e}")
+        return
+
+    # Only the needed fields from Station
+    owner_name       = escape_invalid_characters(station_info.get('Name', ''))
+    owner_street     = escape_invalid_characters(station_info.get('Street', ''))
+    owner_postalcode = escape_invalid_characters(station_info.get('Postalcode', ''))
+    owner_city       = escape_invalid_characters(station_info.get('City', ''))
+    owner_county     = escape_invalid_characters(station_info.get('County', ''))
+    owner_country    = escape_invalid_characters(station_info.get('Country', ''))
+    contest          = escape_invalid_characters(station_info.get('Contest', ''))
+
     # Ask the user for the output ADIF file location
     adif_file = filedialog.asksaveasfilename(defaultextension=".adi", filetypes=[("ADIF files", "*.adi")])
     if not adif_file:
@@ -2431,9 +2511,11 @@ def export_to_adif():
                 # Prepare the ADIF record from the JSON data
                 adif_record = []
                 operator = escape_invalid_characters(qso.get('My Operator', ''))
-                mycallsign = escape_invalid_characters(qso.get('My Callsign', ''))
+                station_callsign = escape_invalid_characters(qso.get('My Callsign', ''))
+
                 callsign = escape_invalid_characters(qso.get('Callsign', ''))
                 name = escape_invalid_characters(qso.get('Name', ''))
+
                 date = export_format_date(qso.get('Date', ''))
                 time = export_format_time(qso.get('Time', ''))
                 mode = escape_invalid_characters(qso.get('Mode', ''))
@@ -2442,12 +2524,26 @@ def export_to_adif():
                 frequency = escape_invalid_characters(qso.get('Frequency', ''))
                 sent = escape_invalid_characters(qso.get('Sent', ''))
                 received = escape_invalid_characters(qso.get('Received', ''))
+                stx = escape_invalid_characters(qso.get('Sent Exchange', ''))
+                srx = escape_invalid_characters(qso.get('Receive Exchange', ''))
                 comment = escape_invalid_characters(qso.get('Comment', ''))
+
                 wwff = escape_invalid_characters(qso.get('WWFF', ''))
                 pota = escape_invalid_characters(qso.get('POTA', ''))
                 bota = escape_invalid_characters(qso.get('BOTA', ''))
-                my_pota = escape_invalid_characters(qso.get('My POTA', ''))
-                my_bota = escape_invalid_characters(qso.get('My BOTA', ''))
+                cota = escape_invalid_characters(qso.get('COTA', ''))
+                sota = escape_invalid_characters(qso.get('SOTA', ''))
+                iota = escape_invalid_characters(qso.get('IOTA', ''))
+                wlota = escape_invalid_characters(qso.get('WLOTA', ''))
+
+                station_wwff = escape_invalid_characters(qso.get('My WWFF', ''))
+                station_pota = escape_invalid_characters(qso.get('My POTA', ''))
+                station_bota = escape_invalid_characters(qso.get('My BOTA', ''))
+                station_cota = escape_invalid_characters(qso.get('My COTA', ''))
+                station_sota = escape_invalid_characters(qso.get('My SOTA', ''))
+                station_iota = escape_invalid_characters(qso.get('My IOTA', ''))
+                station_wlota = escape_invalid_characters(qso.get('My WLOTA', ''))
+                
                 locator = escape_invalid_characters(qso.get('Locator', ''))
                 satellite = escape_invalid_characters(qso.get('Satellite', ''))
 
@@ -2461,38 +2557,61 @@ def export_to_adif():
                 adif_record.append(f"<submode:{len(submode)}>{submode}")
                 adif_record.append(f"<rst_rcvd:{len(received)}>{received}")
                 adif_record.append(f"<rst_sent:{len(sent)}>{sent}")
+                adif_record.append(f"<stx:{len(stx)}>{stx}")
+                adif_record.append(f"<srx:{len(srx)}>{srx}")
                 adif_record.append(f"<time_off:{len(time)}>{time}")
                 adif_record.append(f"<time_on:{len(time)}>{time}")
                 adif_record.append(f"<qso_date:{len(date)}>{date}")
                 adif_record.append(f"<operator:{len(operator)}>{operator}")
-                adif_record.append(f"<station_callsign:{len(mycallsign)}>{mycallsign}")
+                adif_record.append(f"<station_callsign:{len(station_callsign)}>{station_callsign}")
                 adif_record.append(f"<gridsquare:{len(locator)}>{locator}")
                 adif_record.append(f"<sat_name:{len(satellite)}>{satellite}")
                 adif_record.append(f"<name:{len(name)}>{name}")
 
-                # Determine the log type: WWFF, POTA, or Normal
-                if log_type == "WWFF" and wwff:
-                    activation = "WWFF"
-                    adif_record.append(f"<sig:{len(activation)}>{activation}")
-                    adif_record.append(f"<sig_info:{len(wwff)}>{wwff}")                    
-                elif log_type == "POTA" and pota:
-                    activation = "POTA"
-                    adif_record.append(f"<sig:{len(activation)}>{activation}")
-                    adif_record.append(f"<sig_info:{len(pota)}>{pota}")
-                    adif_record.append(f"<my_sig:{len(activation)}>{activation}")
-                    adif_record.append(f"<my_sig_info:{len(my_pota)}>{my_pota}") 
-                elif log_type == "BOTA" and bota:
+                adif_record.append(f"<MY_POTA_REF:{len(station_pota)}>{station_pota}")
+                adif_record.append(f"<POTA_REF:{len(pota)}>{pota}")
+                adif_record.append(f"<MY_WWFF_REF:{len(station_wwff)}>{station_wwff}")
+                adif_record.append(f"<WWFF_REF:{len(wwff)}>{wwff}")
+                adif_record.append(f"<MY_IOTA:{len(station_iota)}>{station_iota}")
+                adif_record.append(f"<IOTA:{len(iota)}>{iota}")
+                adif_record.append(f"<MY_SOTA_REF:{len(station_sota)}>{station_sota}")
+                adif_record.append(f"<SOTA_REF:{len(sota)}>{sota}")
+
+                # Add the Station fields (fixed for all QSOs)
+                adif_record.append(f"<station_name:{len(owner_name)}>{owner_name}")
+                adif_record.append(f"<station_street:{len(owner_street)}>{owner_street}")
+                adif_record.append(f"<station_postal_code:{len(owner_postalcode)}>{owner_postalcode}")
+                adif_record.append(f"<station_city:{len(owner_city)}>{owner_city}")
+                adif_record.append(f"<station_cnty:{len(owner_county)}>{owner_county}")
+                adif_record.append(f"<station_country:{len(owner_country)}>{owner_country}")
+                adif_record.append(f"<contest_id:{len(contest)}>{contest}")
+
+                # Determine the log type: BOTA or WLOTA, store info in SIG
+                if log_type == "BOTA" and bota:
                     activation = "BOTA"
                     adif_record.append(f"<sig:{len(activation)}>{activation}")
                     adif_record.append(f"<sig_info:{len(bota)}>{bota}")
-                    adif_record.append(f"<my_sig:{len(activation)}>{activation}")
-                    adif_record.append(f"<my_sig_info:{len(my_bota)}>{my_bota}") 
+                    adif_record.append(f"<station_sig:{len(activation)}>{activation}")
+                    adif_record.append(f"<station_sig_info:{len(station_bota)}>{station_bota}") 
+                elif log_type == "COTA" and cota:
+                    activation = "COTA"
+                    adif_record.append(f"<sig:{len(activation)}>{activation}")
+                    adif_record.append(f"<sig_info:{len(cota)}>{cota}")
+                    adif_record.append(f"<station_sig:{len(activation)}>{activation}")
+                    adif_record.append(f"<station_sig_info:{len(station_cota)}>{station_cota}")                     
+                elif log_type == "WLOTA" and wlota:
+                    activation = "WLOTA"
+                    adif_record.append(f"<sig:{len(activation)}>{activation}")
+                    adif_record.append(f"<sig_info:{len(wlota)}>{wlota}")
+                    adif_record.append(f"<station_sig:{len(activation)}>{activation}")
+                    adif_record.append(f"<station_sig_info:{len(station_wlota)}>{station_wlota}")                                                           
                 # Join the ADIF record and append EOR
                 file.write(" ".join(adif_record) + " <EOR>\n")
 
         messagebox.showinfo("Success", "Exported to ADIF format successfully!")
     except Exception as e:
         messagebox.showerror("Error", f"Failed to export to ADIF: {e}")
+
 
 
 # Function to open the export folder
@@ -2546,8 +2665,8 @@ def log_qso():
         return
 
     # Strict format checks for date and time
-    date_str = date_var.get()
-    time_str = time_var.get()
+    date_str = qso_date_var.get()
+    time_str = qso_time_var.get()
 
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_str):
         messagebox.showerror("Date Format Error", "Date must be in YYYY-MM-DD format (e.g., 2025-04-22)")
@@ -2570,7 +2689,7 @@ def log_qso():
         return
 
     # Get values from form
-    callsign = callsign_var.get().strip()
+    callsign = qso_callsign_var.get().strip()
     if not callsign:
         messagebox.showwarning("Warning", "Log may not be empty!")
         reset_fields()
@@ -2581,32 +2700,45 @@ def log_qso():
         "Date": date_str,
         "Time": time_str,
         "Callsign": callsign,
-        "Name": name_var.get().strip(),
-        "My Callsign": my_callsign_var.get().upper(),
-        "My Operator": my_operator_var.get().upper(),
-        "My Locator": my_locator_var.get().upper(),
-        "My Location": my_location_var.get(),
-        "My WWFF": my_wwff_var.get(),
-        "My POTA": my_pota_var.get(),
-        "My BOTA": my_bota_var.get(),
-        "Country": country_var,
-        "Continent": continent_var,
-        "Sent": rst_sent_var.get(),
-        "Received": rst_received_var.get(),
-        "Mode": mode_var.get(),
-        "Submode": submode_var.get(),
-        "Band": band_var.get(),
+        "Name": qso_name_var.get().strip(),
+        "My Callsign": station_callsign_var.get().upper(),
+        "My Operator": station_operator_var.get().upper(),
+        "My Locator": station_locator_var.get().upper(),
+        "My Location": station_location_var.get(),
+        "My WWFF": station_wwff_var.get(),
+        "My POTA": station_pota_var.get(),
+        "My BOTA": station_bota_var.get(),
+        "My COTA": station_cota_var.get(),
+        "My IOTA": station_iota_var.get(),
+        "My SOTA": station_sota_var.get(),
+        "My WLOTA": station_wlota_var.get(),
+        "Country": qso_country_var,
+        "Continent": qso_continent_var,
+        "Sent": qso_rst_sent_var.get(),
+        "Received": qso_rst_received_var.get(),
+        "Mode": qso_mode_var.get(),
+        "Submode": qso_submode_var.get(),
+        "Band": qso_band_var.get(),
         "Frequency": "",
-        "Locator": locator_var.get().strip(),
-        "Comment": comment_var.get().strip(),
+        "Locator": qso_locator_var.get().strip(),
+        "Comment": qso_comment_var.get().strip(),
         "WWFF": wwff_var.get().strip(),
         "POTA": pota_var.get().strip(),
         "BOTA": bota_var.get().strip(),
-        "Satellite": satellite_var.get().strip()
+        "COTA": cota_var.get().strip(),
+        "IOTA": iota_var.get().strip(),
+        "SOTA": sota_var.get().strip(),
+        "WLOTA": wlota_var.get().strip(),
+        "Satellite": qso_satellite_var.get().strip()
     }
+    
+    # Alleen toevoegen als checkbox actief is
+    if use_serial_var.get():
+        qso_entry["Sent Exchange"] = qso_sent_exchange_var.get()
+        qso_entry["Receive Exchange"] = qso_receive_exchange_var.get()    
 
     # Validate frequency
-    freq_input = frequency_var.get()
+    freq_input = qso_frequency_var.get()
     if freq_input:
         try:
             qso_entry["Frequency"] = f"{float(freq_input):.6f}"
@@ -2640,6 +2772,16 @@ def log_qso():
     if upload_qrz_var.get():
         threading.Thread(target=upload_to_qrz, args=(qso_entry, False), daemon=True).start()
 
+    # Increment the Sent Serial value if "Use Serial" is enabled
+    if use_serial_var.get():
+        try:
+            current_val = int(qso_sent_exchange_var.get())
+            qso_sent_exchange_var.set(str(current_val + 1))
+        except ValueError:
+            # If the current value is not a number, reset it to 1
+            qso_sent_exchange_var.set("1")
+
+
 
 
 
@@ -2661,7 +2803,9 @@ def build_adif(qso):
     mode = qso.get('Mode', '')
     sent = qso.get('Sent', '')
     received = qso.get('Received', '')
-    my_callsign = qso.get('My Callsign', '')
+    stx = qso.get('Sent Exchange', '')
+    srx = qso.get('Receive Exchange', '')
+    station_callsign = qso.get('My Callsign', '')
     operator = qso.get('My Operator', '')
     locator = qso.get('Locator', '')
     name = qso.get('Name', '')
@@ -2677,7 +2821,9 @@ def build_adif(qso):
         f"<MODE:{len(mode)}>{mode}"
         f"<RST_SENT:{len(sent)}>{sent}"
         f"<RST_RCVD:{len(received)}>{received}"
-        f"<STATION_CALLSIGN:{len(my_callsign)}>{my_callsign}"
+        f"<STX:{len(stx)}>{stx}"
+        f"<SRX:{len(srx)}>{srx}"
+        f"<STATION_CALLSIGN:{len(station_callsign)}>{station_callsign}"
         f"<OPERATOR:{len(operator)}>{operator}"
         f"<GRIDSQUARE:{len(locator)}>{locator}"
         f"<NAME:{len(name)}>{name}"
@@ -2695,7 +2841,7 @@ def upload_to_qrz(qso, showstatus):
     global QRZ_status_label
     # Prepare POST data
     post_data = {
-        "KEY": my_qrzapi_var.get(),
+        "KEY": station_qrzapi_var.get(),
         "ACTION": "INSERT",
         "ADIF": build_adif(qso),
     }
@@ -2894,15 +3040,21 @@ def process_qso(adif_record):
         "Name": name,
         "My Callsign": (extract_field(adif_record, "station_callsign") or "").upper(),
         "My Operator": (extract_field(adif_record, "operator") or "").upper(),
-        "My Locator": (extract_field(adif_record, "my_gridsquare") or "").upper(),
+        "My Locator": (extract_field(adif_record, "station_gridsquare") or "").upper(),
         "My Location": "",
         "My WWFF": "",
         "My POTA": "",
         "My BOTA": "",
+        "My COTA": "",
+        "My IOTA": "",
+        "My SOTA": "",
+        "My WLOTA": "",
         "Country": (extract_field(adif_record, "country") or "").title(),
         "Continent": (extract_field(adif_record, "cont") or "").upper(),
         "Sent": (extract_field(adif_record, "rst_sent") or "").upper(),
         "Received": (extract_field(adif_record, "rst_rcvd") or "").upper(),
+        "Sent Exchange": (extract_field(adif_record, "stx") or ""),
+        "Receive Exchange": (extract_field(adif_record, "srx") or ""),
         "Mode": (extract_field(adif_record, "mode") or "").upper(),
         "Submode": (extract_field(adif_record, "submode") or "").upper(),
         "Band": (extract_field(adif_record, "band") or "").lower(),
@@ -2913,6 +3065,10 @@ def process_qso(adif_record):
         "WWFF": sig_info if "WWFF" in sig else "",
         "POTA": sig_info if "POTA" in sig else "",
         "BOTA": sig_info if "BOTA" in sig else "",
+        "COTA": sig_info if "COTA" in sig else "",
+        "IOTA": sig_info if "IOTA" in sig else "",
+        "SOTA": sig_info if "SOTA" in sig else "",
+        "WLOTA": sig_info if "WLOTA" in sig else "",
         "Satellite": extract_field(adif_record, "sat_name") or ""
     }
 
@@ -2922,7 +3078,7 @@ def process_qso(adif_record):
 
     # Update the country field based on the callsign
     check_callsign_prefix(callsign, update_ui=False)  # Disable UI update to prevent excessive updates
-    qso_entry["Country"] = country_var  # Set the updated country
+    qso_entry["Country"] = qso_country_var  # Set the updated country
     
     # Upload to QRZ after logging the QSO
     if upload_qrz_var.get():
@@ -3184,7 +3340,7 @@ def handle_rprtx_error(error_code):
 
 
 def update_frequency_and_mode_thread():
-    global frequency_var, frequency_mhz, last_passband
+    global qso_frequency_var, frequency_mhz, last_passband
     last_mode = None
 
     while not stop_frequency_thread.is_set():
@@ -3205,7 +3361,7 @@ def update_frequency_and_mode_thread():
             if freq_resp.isdigit():
                 frequency_hz = int(freq_resp)
                 frequency_mhz = frequency_hz / 1_000_000
-                frequency_var.set(f"{frequency_mhz:.4f}")
+                qso_frequency_var.set(f"{frequency_mhz:.4f}")
             else:
                 print(f"[Hamlib] Invalid frequency response: {freq_resp}")
 
@@ -3227,7 +3383,7 @@ def update_frequency_and_mode_thread():
                 passband_str = lines[1].strip()
 
                 if mode and mode != last_mode:
-                    mode_var.set(mode)
+                    qso_mode_var.set(mode)
                     last_mode = mode
                     on_mode_change()
 
@@ -3255,7 +3411,7 @@ def update_frequency_and_mode_thread():
 
 # Manual Frequency or Mode input handler
 def handle_callsign_or_frequency_entry(event=None):
-    value = callsign_var.get().strip().upper()
+    value = qso_callsign_var.get().strip().upper()
 
     valid_modes = {
         'USB', 'LSB', 'CW', 'CWR', 'RTTY', 'RTTYR', 'AM', 'FM', 'WFM', 'AMS',
@@ -3264,7 +3420,7 @@ def handle_callsign_or_frequency_entry(event=None):
     }
 
     def refocus():
-        callsign_var.set("")
+        qso_callsign_var.set("")
         callsign_entry.focus_set()
 
     def handle_rprt_error_with_popup(code):
@@ -3450,9 +3606,9 @@ def open_station_setup():
     Station_Setup_Window.resizable(False, False)
 
     if platform.system() == "Darwin":
-        Station_Setup_Window.geometry("500x460")
+        Station_Setup_Window.geometry("500x760")
     else:
-        Station_Setup_Window.geometry("500x460")
+        Station_Setup_Window.geometry("500x760")
 
 
     # Force window to stay on top and modal
@@ -3471,60 +3627,126 @@ def open_station_setup():
     y = root_y
     Station_Setup_Window.geometry(f"+{x}+{y}")
 
-    local_callsign = tk.StringVar(value=my_callsign_var.get())
-    local_operator = tk.StringVar(value=my_operator_var.get())
-    local_locator = tk.StringVar(value=my_locator_var.get())
-    local_location = tk.StringVar(value=my_location_var.get())
-    local_pota = tk.StringVar(value=my_pota_var.get())
-    local_pota_name = tk.StringVar()
-    local_bota = tk.StringVar(value=my_bota_var.get())
-    local_bota_name = tk.StringVar()
-    local_bota_lat = tk.StringVar()
-    local_bota_long = tk.StringVar()
-    local_wwff = tk.StringVar(value=my_wwff_var.get())
-    local_wwff_name = tk.StringVar()
-    local_wwff_lat = tk.StringVar()
-    local_wwff_long = tk.StringVar()    
-    local_qrzapi = tk.StringVar(value=my_qrzapi_var.get())
-    local_upload_qrz = tk.BooleanVar(value=upload_qrz_var.get())
+    station_callsign = tk.StringVar(value=station_callsign_var.get())
+    station_operator = tk.StringVar(value=station_operator_var.get())
+    station_locator = tk.StringVar(value=station_locator_var.get())
+    station_location = tk.StringVar(value=station_location_var.get())
 
-    local_callsign.trace("w", lambda *args: local_callsign.set(local_callsign.get().upper()))
-    local_operator.trace("w", lambda *args: local_operator.set(local_operator.get().upper()))
-    local_locator.trace("w", lambda *args: local_locator.set(local_locator.get().upper()))
-    local_wwff.trace("w", lambda *args: local_wwff.set(local_wwff.get().upper()))
-    local_pota.trace("w", lambda *args: local_pota.set(local_pota.get().upper()))
-    local_bota.trace("w", lambda *args: local_bota.set(local_bota.get().upper()))
+    station_name = tk.StringVar(value=station_name_var.get())
+    station_street = tk.StringVar(value=station_street_var.get())
+    station_postalcode = tk.StringVar(value=station_postalcode_var.get())
+    station_city = tk.StringVar(value=station_city_var.get())
+    station_county = tk.StringVar(value=station_county_var.get())
+    station_country = tk.StringVar(value=station_country_var.get())
+    station_cqzone = tk.StringVar(value=station_cqzone_var.get())
+    station_ituzone = tk.StringVar(value=station_ituzone_var.get())
+
+
+    station_contest = tk.StringVar(value=station_contest_var.get())
     
+    station_pota = tk.StringVar(value=station_pota_var.get())
+    station_pota_name = tk.StringVar()
+    station_bota = tk.StringVar(value=station_bota_var.get())
+    station_bota_name = tk.StringVar()
+    station_bota_lat = tk.StringVar()
+    station_bota_long = tk.StringVar()
+    station_wwff = tk.StringVar(value=station_wwff_var.get())
+    station_wwff_name = tk.StringVar()
+    station_wwff_lat = tk.StringVar()
+    station_wwff_long = tk.StringVar()    
+    station_iota = tk.StringVar(value=station_iota_var.get())
+    station_iota_name = tk.StringVar()
+    station_iota_lat = tk.StringVar()
+    station_iota_long = tk.StringVar()
+    station_cota = tk.StringVar()
+    station_sota = tk.StringVar(value=station_sota_var.get())
+    station_wlota = tk.StringVar(value=station_wlota_var.get())
+
+    station_qrzapi = tk.StringVar(value=station_qrzapi_var.get())
+    station_upload_qrz = tk.BooleanVar(value=upload_qrz_var.get())
+
+    station_callsign.trace("w", lambda *args: station_callsign.set(station_callsign.get().upper()))
+    station_operator.trace("w", lambda *args: station_operator.set(station_operator.get().upper()))
+    station_locator.trace("w", lambda *args: station_locator.set(station_locator.get().upper()))
+    station_postalcode.trace("w", lambda *args: station_postalcode.set(station_postalcode.get().upper()))
+    station_wwff.trace("w", lambda *args: station_wwff.set(station_wwff.get().upper()))
+    station_pota.trace("w", lambda *args: station_pota.set(station_pota.get().upper()))
+    station_bota.trace("w", lambda *args: station_bota.set(station_bota.get().upper()))
+    station_iota.trace("w", lambda *args: station_iota.set(station_iota.get().upper()))
+    station_sota.trace("w", lambda *args: station_sota.set(station_sota.get().upper()))
+    station_wlota.trace("w", lambda *args: station_wlota.set(station_wlota.get().upper()))
+    station_cota.trace("w", lambda *args: station_cota.set(station_cota.get().upper()))
+
     Station_Setup_Window.grid_columnconfigure(0, weight=1)
 
+    def open_qralocator():
+        locator = station_locator.get().strip().upper()
+        if locator:
+            url = f"https://locator.pd5dj.nl/?locator={locator}"
+        else:
+            url = "https://locator.pd5dj.nl/"
+        webbrowser.open(url)
+
     # ---------------- LabelFrame 1: Station info ----------------
-    lf1 = tk.LabelFrame(Station_Setup_Window, text="Station Setup", font=('Arial', 10, 'bold'))
+    lf1 = tk.LabelFrame(Station_Setup_Window, text="Station Information", font=('Arial', 10, 'bold'))
     lf1.grid(row=0, column=0, padx=10, pady=5, sticky="ew")
     lf1.grid_columnconfigure(1, weight=1)
 
     tk.Label(lf1, text="Callsign:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
-    tk.Entry(lf1, textvariable=local_callsign, font=('Arial', 10, 'bold')).grid(row=0, column=1, padx=10, pady=5, sticky='ew')
+    tk.Entry(lf1, textvariable=station_callsign, font=('Arial', 10, 'bold')).grid(row=0, column=1, padx=10, pady=5, sticky='ew')
 
     tk.Label(lf1, text="Operator:", font=('Arial', 10)).grid(row=1, column=0, padx=10, pady=1, sticky='w')
-    tk.Entry(lf1, textvariable=local_operator, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=10, pady=5, sticky='ew')
+    tk.Entry(lf1, textvariable=station_operator, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=10, pady=5, sticky='ew')
 
     tk.Label(lf1, text="Locator:", font=('Arial', 10)).grid(row=2, column=0, padx=10, pady=1, sticky='w')
-    tk.Entry(lf1, textvariable=local_locator, font=('Arial', 10, 'bold')).grid(row=2, column=1, padx=10, pady=5, sticky='ew')
-
-
-    def open_qralocator():
-        url = "https://www.egloff.eu/qralocator/"
-        webbrowser.open(url)
+    tk.Entry(lf1, textvariable=station_locator, font=('Arial', 10, 'bold')).grid(row=2, column=1, padx=10, pady=5, sticky='ew')
 
     btn = tk.Button(lf1, text="Find Your QRA Locator", command=open_qralocator)
     btn.grid(row=2, column=2, padx=10, pady=5)    
 
-    tk.Label(lf1, text="Location:", font=('Arial', 10)).grid(row=3, column=0, padx=10, pady=1, sticky='w')
-    tk.Entry(lf1, textvariable=local_location, font=('Arial', 10, 'bold')).grid(row=3, column=1, padx=10, pady=5, sticky='ew')
+    tk.Label(lf1, text="QSO Location:", font=('Arial', 10)).grid(row=3, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(lf1, textvariable=station_location, font=('Arial', 10, 'bold')).grid(row=3, column=1, padx=10, pady=5, sticky='ew')
+
+    separator = ttk.Separator(lf1, orient="horizontal")
+    separator.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+
+    tk.Label(lf1, text="Name:", font=('Arial', 10)).grid(row=5, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(lf1, textvariable=station_name, font=('Arial', 10, 'bold')).grid(row=5, column=1, padx=10, pady=5, sticky='ew')
+
+    tk.Label(lf1, text="Street:", font=('Arial', 10)).grid(row=6, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(lf1, textvariable=station_street, font=('Arial', 10, 'bold')).grid(row=6, column=1, padx=10, pady=5, sticky='ew')
+
+    tk.Label(lf1, text="Postalcode:", font=('Arial', 10)).grid(row=7, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(lf1, textvariable=station_postalcode, font=('Arial', 10, 'bold')).grid(row=7, column=1, padx=10, pady=5, sticky='ew')
+
+    tk.Label(lf1, text="City:", font=('Arial', 10)).grid(row=8, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(lf1, textvariable=station_city, font=('Arial', 10, 'bold')).grid(row=8, column=1, padx=10, pady=5, sticky='ew')
+
+    tk.Label(lf1, text="County:", font=('Arial', 10)).grid(row=9, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(lf1, textvariable=station_county, font=('Arial', 10, 'bold')).grid(row=9, column=1, padx=10, pady=5, sticky='ew') 
+
+    tk.Label(lf1, text="Country:", font=('Arial', 10)).grid(row=10, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(lf1, textvariable=station_country, font=('Arial', 10, 'bold')).grid(row=10, column=1, padx=10, pady=5, sticky='ew')    
+   
+    tk.Label(lf1, text="CQ Zone:", font=('Arial', 10)).grid(row=11, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(lf1, textvariable=station_cqzone, font=('Arial', 10, 'bold')).grid(row=11, column=1, padx=10, pady=5, sticky='ew')    
+
+    tk.Label(lf1, text="ITU Zone:", font=('Arial', 10)).grid(row=12, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(lf1, textvariable=station_ituzone, font=('Arial', 10, 'bold')).grid(row=12, column=1, padx=10, pady=5, sticky='ew')    
+
+    # ---------------- LabelFrame 3: Contest info ----------------
+    lf2 = tk.LabelFrame(Station_Setup_Window, text="Participating Contest", font=('Arial', 10, 'bold'))
+    lf2.grid(row=2, column=0, padx=10, pady=5, sticky="ew")
+    lf2.grid_columnconfigure(1, weight=1)
+
+    tk.Label(lf2, text="Contest:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
+    tk.Entry(lf2, textvariable=station_contest, font=('Arial', 10, 'bold')).grid(row=0, column=1, padx=10, pady=5, sticky='ew')    
+
+
 
     notebook = ttk.Notebook(Station_Setup_Window)
-    notebook.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
-
+    notebook.grid(row=3, column=0, padx=10, pady=5, sticky="nsew")
+    
     Station_Setup_Window.grid_rowconfigure(1, weight=0)
     Station_Setup_Window.grid_columnconfigure(0, weight=1)
 
@@ -3535,12 +3757,12 @@ def open_station_setup():
     pota_frame.grid_columnconfigure(1, weight=1)
 
     tk.Label(pota_frame, text="Reference No.:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
-    pota_entry = tk.Entry(pota_frame, textvariable=local_pota, font=('Arial', 10, 'bold'))
+    pota_entry = tk.Entry(pota_frame, textvariable=station_pota, font=('Arial', 10, 'bold'))
     pota_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
-    pota_entry.bind("<FocusOut>", lambda e: auto_fill_pota_prefix(local_pota, local_pota_name, local_callsign))
+    pota_entry.bind("<FocusOut>", lambda e: auto_fill_pota_prefix(station_pota, station_pota_name, station_callsign))
 
     tk.Label(pota_frame, text="Park name:", font=('Arial', 10)).grid(row=1, column=0, columnspan=2, padx=10, pady=1, sticky='w')
-    tk.Label(pota_frame, textvariable=local_pota_name, font=('Arial', 10, 'bold'), wraplength=360, justify="left").grid(row=1, column=1, columnspan=2, padx=10, pady=1, sticky='w')
+    tk.Label(pota_frame, textvariable=station_pota_name, font=('Arial', 10, 'bold'), wraplength=360, justify="left").grid(row=1, column=1, columnspan=2, padx=10, pady=1, sticky='w')
 
 
     # ---------- WWFF tab ----------
@@ -3550,12 +3772,12 @@ def open_station_setup():
     wwff_frame.grid_columnconfigure(1, weight=1)
 
     tk.Label(wwff_frame, text="Reference No.:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
-    wwff_entry = tk.Entry(wwff_frame, textvariable=local_wwff, font=('Arial', 10, 'bold'))
+    wwff_entry = tk.Entry(wwff_frame, textvariable=station_wwff, font=('Arial', 10, 'bold'))
     wwff_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
-    wwff_entry.bind("<FocusOut>", lambda e: auto_fill_wwff_prefix(local_wwff, local_wwff_name, local_wwff_lat, local_wwff_long, local_callsign))
+    wwff_entry.bind("<FocusOut>", lambda e: auto_fill_wwff_prefix(station_wwff, station_wwff_name, station_wwff_lat, station_wwff_long, station_callsign))
 
     tk.Label(wwff_frame, text="Park name:", font=('Arial', 10)).grid(row=1, column=0, columnspan=2, padx=10, pady=1, sticky='w')
-    tk.Label(wwff_frame, textvariable=local_wwff_name, font=('Arial', 10, 'bold'), wraplength=360, justify="left").grid(row=1, column=1, columnspan=2, padx=10, pady=1, sticky='w')
+    tk.Label(wwff_frame, textvariable=station_wwff_name, font=('Arial', 10, 'bold'), wraplength=360, justify="left").grid(row=1, column=1, columnspan=2, padx=10, pady=1, sticky='w')
 
 
     # ---------- BOTA tab ----------
@@ -3565,18 +3787,64 @@ def open_station_setup():
     bota_frame.grid_columnconfigure(1, weight=1)
 
     tk.Label(bota_frame, text="Reference No.:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
-    bota_entry = tk.Entry(bota_frame, textvariable=local_bota, font=('Arial', 10, 'bold'))
+    bota_entry = tk.Entry(bota_frame, textvariable=station_bota, font=('Arial', 10, 'bold'))
     bota_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
-    bota_entry.bind("<FocusOut>", lambda e: auto_fill_bota_prefix(local_bota, local_bota_name, local_bota_lat, local_bota_long, local_callsign))
+    bota_entry.bind("<FocusOut>", lambda e: auto_fill_bota_prefix(station_bota, station_bota_name, station_bota_lat, station_bota_long, station_callsign))
 
     tk.Label(bota_frame, text="Bunker name:", font=('Arial', 10)).grid(row=1, column=0, columnspan=2, padx=10, pady=1, sticky='w')
-    tk.Label(bota_frame, textvariable=local_bota_name, font=('Arial', 10, 'bold'), wraplength=360, justify="left").grid(row=1, column=1, columnspan=2, padx=10, pady=1, sticky='w')
+    tk.Label(bota_frame, textvariable=station_bota_name, font=('Arial', 10, 'bold'), wraplength=360, justify="left").grid(row=1, column=1, columnspan=2, padx=10, pady=1, sticky='w')
 
+
+    # ---------- COTA tab ----------
+    cota_frame = tk.Frame(notebook, background='#f0f0f0')
+    notebook.add(cota_frame, text="COTA")
+
+    bota_frame.grid_columnconfigure(1, weight=1)
+
+    tk.Label(cota_frame, text="Reference No.:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
+    cota_entry = tk.Entry(cota_frame, textvariable=station_cota, font=('Arial', 10, 'bold'))
+    cota_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
+
+    # ---------- IOTA tab ----------
+    iota_frame = tk.Frame(notebook, background='#f0f0f0')
+    notebook.add(iota_frame, text="IOTA")
+
+    iota_frame.grid_columnconfigure(1, weight=1)
+
+    tk.Label(iota_frame, text="Reference No.:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
+    bota_entry = tk.Entry(iota_frame, textvariable=station_iota, font=('Arial', 10, 'bold'))
+    bota_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
+    bota_entry.bind("<FocusOut>", lambda e: auto_fill_iota_prefix(station_iota, station_iota_name, station_iota_lat, station_iota_long, station_callsign))
+
+    tk.Label(iota_frame, text="Island name:", font=('Arial', 10)).grid(row=1, column=0, columnspan=2, padx=10, pady=1, sticky='w')
+    tk.Label(iota_frame, textvariable=station_iota_name, font=('Arial', 10, 'bold'), wraplength=360, justify="left").grid(row=1, column=1, columnspan=2, padx=10, pady=1, sticky='w')
+
+    # ---------- SOTA tab ----------
+    sota_frame = tk.Frame(notebook, background='#f0f0f0')
+    notebook.add(sota_frame, text="SOTA")
+
+    sota_frame.grid_columnconfigure(1, weight=1)
+
+    tk.Label(sota_frame, text="Reference No.:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
+    sota_entry = tk.Entry(sota_frame, textvariable=station_sota, font=('Arial', 10, 'bold'))
+    sota_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
+
+    # ---------- WLOTA tab ----------
+    wlota_frame = tk.Frame(notebook, background='#f0f0f0')
+    notebook.add(wlota_frame, text="WLOTA")
+
+    wlota_frame.grid_columnconfigure(1, weight=1)
+
+    tk.Label(wlota_frame, text="Reference No.:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
+    wlota_entry = tk.Entry(wlota_frame, textvariable=station_wlota, font=('Arial', 10, 'bold'))
+    wlota_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
 
     # Auto fill calls
-    auto_fill_pota_prefix(local_pota, local_pota_name, local_callsign)
-    auto_fill_wwff_prefix(local_wwff, local_wwff_name, local_wwff_lat, local_wwff_long, local_callsign)
-    auto_fill_bota_prefix(local_bota, local_bota_name, local_bota_lat, local_bota_long, local_callsign)
+    auto_fill_pota_prefix(station_pota, station_pota_name, station_callsign)
+    auto_fill_wwff_prefix(station_wwff, station_wwff_name, station_wwff_lat, station_wwff_long, station_callsign)
+    auto_fill_bota_prefix(station_bota, station_bota_name, station_bota_lat, station_bota_long, station_callsign)
+    auto_fill_iota_prefix(station_iota, station_iota_name, station_iota_lat, station_iota_long, station_callsign)
+    
 
     for frame in (pota_frame, wwff_frame, bota_frame):
         frame.grid_columnconfigure(0, minsize=100)
@@ -3588,10 +3856,10 @@ def open_station_setup():
     lf5.grid(row=4, column=0, padx=10, pady=5, sticky="ew")
     lf5.grid_columnconfigure(1, weight=1)
 
-    tk.Checkbutton(lf5, text="Upload to QRZ", variable=local_upload_qrz).grid(row=0, column=0, columnspan=2, sticky="w", padx=10)
+    tk.Checkbutton(lf5, text="Upload to QRZ", variable=station_upload_qrz).grid(row=0, column=0, columnspan=2, sticky="w", padx=10)
 
     tk.Label(lf5, text="QRZ API Key:", font=('Arial', 10)).grid(row=1, column=0, padx=10, pady=1, sticky='w')
-    qrzapi_entry = tk.Entry(lf5, textvariable=local_qrzapi, font=('Arial', 10, 'bold'), show="*")
+    qrzapi_entry = tk.Entry(lf5, textvariable=station_qrzapi, font=('Arial', 10, 'bold'), show="*")
     qrzapi_entry.grid(row=1, column=1, padx=(10, 100), pady=5, sticky='ew')
 
     def toggle_qrz_visibility():
@@ -3615,19 +3883,36 @@ def open_station_setup():
         Station_Setup_Window = None
 
     def save_setup():
-        if not is_valid_locator(local_locator.get().strip()):
+        if not is_valid_locator(station_locator.get().strip()):
             messagebox.showerror("Invalid Locator", "The Maidenhead locator must be at least 4 characters and valid.\nExample: FN31 or FN31TK")
             return
         # Set global values from local vars
-        my_callsign_var.set(local_callsign.get())
-        my_operator_var.set(local_operator.get())
-        my_locator_var.set(local_locator.get())
-        my_location_var.set(local_location.get())
-        my_pota_var.set(local_pota.get())
-        my_wwff_var.set(local_wwff.get())
-        my_bota_var.set(local_bota.get())
-        my_qrzapi_var.set(local_qrzapi.get())
-        upload_qrz_var.set(local_upload_qrz.get())
+        station_callsign_var.set(station_callsign.get())
+        station_operator_var.set(station_operator.get())
+        station_locator_var.set(station_locator.get())
+        station_location_var.set(station_location.get())
+        
+        station_name_var.set(station_name.get())
+        station_street_var.set(station_street.get())
+        station_postalcode_var.set(station_postalcode.get())
+        station_city_var.set(station_city.get())
+        station_county_var.set(station_county.get())
+        station_country_var.set(station_country.get())
+        station_cqzone_var.set(station_cqzone.get())
+        station_ituzone_var.set(station_ituzone.get())
+
+        station_contest_var.set(station_contest.get())
+
+        station_pota_var.set(station_pota.get())
+        station_wwff_var.set(station_wwff.get())
+        station_bota_var.set(station_bota.get())
+        station_iota_var.set(station_iota.get())
+        station_sota_var.set(station_sota.get())
+        station_wlota_var.set(station_wlota.get())
+        station_cota_var.set(station_cota.get())
+
+        station_qrzapi_var.set(station_qrzapi.get())
+        upload_qrz_var.set(station_upload_qrz.get())
 
         save_station_setup()
         close_window()
@@ -3929,23 +4214,43 @@ def load_station_setup():
                 logbook_data = json.load(file)
                 #Check for Valid fields in "STATION", otherwise set defaults
                 station_info = logbook_data.get("Station", {})
-                my_operator_var.set(station_info.get("Operator", "N0CALL"))
-                my_callsign_var.set(station_info.get("Callsign", "N0CALL"))
-                my_locator_var.set(station_info.get("Locator", "JO22LO"))
-                my_location_var.set(station_info.get("Location", ""))
-                my_wwff_var.set(station_info.get("WWFF", ""))
-                my_pota_var.set(station_info.get("POTA", ""))
-                my_bota_var.set(station_info.get("BOTA", ""))
-                my_qrzapi_var.set(station_info.get("QRZAPI", ""))
+
+                station_operator_var.set(station_info.get("Operator", "N0CALL"))
+                station_callsign_var.set(station_info.get("Callsign", "N0CALL"))
+                station_locator_var.set(station_info.get("Locator", "AB01CD"))
+                station_location_var.set(station_info.get("Location", ""))
+                
+                station_name_var.set(station_info.get("Name", ""))
+                station_street_var.set(station_info.get("Street", ""))
+                station_postalcode_var.set(station_info.get("Postalcode", ""))
+                station_city_var.set(station_info.get("City", ""))
+                station_county_var.set(station_info.get("County", ""))
+                station_country_var.set(station_info.get("Country", ""))
+                station_cqzone_var.set(station_info.get("CQ Zone", ""))
+                station_ituzone_var.set(station_info.get("ITU Zone", ""))
+
+                station_contest_var.set(station_info.get("Contest", ""))
+
+                station_wwff_var.set(station_info.get("WWFF", ""))
+                station_pota_var.set(station_info.get("POTA", ""))
+                station_bota_var.set(station_info.get("BOTA", ""))
+                station_iota_var.set(station_info.get("IOTA", ""))
+                station_sota_var.set(station_info.get("SOTA", ""))
+                station_wlota_var.set(station_info.get("WLOTA", ""))
+                station_cota_var.set(station_info.get("COTA", ""))
+                station_qrzapi_var.set(station_info.get("QRZAPI", ""))
                 upload_qrz_var.set(bool(station_info.get("QRZUpload", False)))
 
-                my_callsign_entry.config(textvariable=my_callsign_var)
-                my_operator_entry.config(textvariable=my_operator_var)
-                my_locator_entry.config(textvariable=my_locator_var)
-                my_location_entry.config(textvariable=my_location_var)
-                my_wwff_entry.config(textvariable=my_wwff_var)
-                my_pota_entry.config(textvariable=my_pota_var)
-                my_bota_entry.config(textvariable=my_bota_var)
+                station_callsign_entry.config(textvariable=station_callsign_var)
+                station_operator_entry.config(textvariable=station_operator_var)
+                station_locator_entry.config(textvariable=station_locator_var)
+                station_wwff_entry.config(textvariable=station_wwff_var)
+                station_pota_entry.config(textvariable=station_pota_var)
+                station_bota_entry.config(textvariable=station_bota_var)
+                station_iota_entry.config(textvariable=station_iota_var)
+                station_sota_entry.config(textvariable=station_sota_var)
+                station_wlota_entry.config(textvariable=station_wlota_var)
+                station_cota_entry.config(textvariable=station_cota_var)
 
         except (json.JSONDecodeError, KeyError) as e:
             messagebox.showerror("Error", f"Failed to load station details from logbook: {e}")
@@ -3965,14 +4270,28 @@ def save_station_setup():
 
                 # Update or add the Station section
                 json_data["Station"] = {
-                    "Callsign": my_callsign_var.get().upper(),
-                    "Operator": my_operator_var.get().upper(),
-                    "Locator": my_locator_var.get().upper(),
-                    "Location" : my_location_var.get(),
-                    "WWFF": my_wwff_var.get(),
-                    "POTA": my_pota_var.get(),
-                    "BOTA": my_bota_var.get(),
-                    "QRZAPI": my_qrzapi_var.get(),
+                    "Callsign": station_callsign_var.get().upper(),
+                    "Operator": station_operator_var.get().upper(),
+                    "Locator": station_locator_var.get().upper(),
+                    "Location" : station_location_var.get(),
+                    "Name" : station_name_var.get(),
+                    "Street" : station_street_var.get(),
+                    "Postalcode" : station_postalcode_var.get(),
+                    "City" : station_city_var.get(),
+                    "County" : station_county_var.get(),
+                    "Country" : station_country_var.get(),
+                    "CQ Zone" : station_cqzone_var.get(),
+                    "ITU Zone" : station_ituzone_var.get(),
+                    "Contest" : station_contest_var.get(),
+
+                    "WWFF": station_wwff_var.get(),
+                    "POTA": station_pota_var.get(),
+                    "BOTA": station_bota_var.get(),
+                    "IOTA": station_iota_var.get(),
+                    "SOTA": station_sota_var.get(),
+                    "WLOTA": station_wlota_var.get(),
+                    "COTA": station_cota_var.get(),
+                    "QRZAPI": station_qrzapi_var.get(),
                     "QRZUpload": upload_qrz_var.get()
                 }
 
@@ -4152,7 +4471,7 @@ def on_query_thread():
 
     username = config.get("QRZ", "username", fallback="").strip()
     password = config.get("QRZ", "password", fallback="").strip()
-    callsign = callsign_var.get().strip()
+    callsign = qso_callsign_var.get().strip()
 
     if not username or not password:
         root.after(0, lambda: messagebox.showwarning("Missing Credentials", "QRZ username/password not found in config.ini"))
@@ -4181,22 +4500,22 @@ def on_query_thread():
         return  # already handled
 
     def update_gui():
-        locator_var.set(data.get("grid", ""))
-        name_var.set(data.get("name", ""))
-        city_var.set(data.get("city", ""))
-        address_var.set(data.get("address", ""))
-        zipcode_var.set(data.get("zipcode", ""))
-        qsl_info_var.set(data.get("qslmgr", ""))
+        qso_locator_var.set(data.get("grid", ""))
+        qso_name_var.set(data.get("name", ""))
+        qrz_city_var.set(data.get("city", ""))
+        qrz_address_var.set(data.get("address", ""))
+        qrz_zipcode_var.set(data.get("zipcode", ""))
+        qrz_qsl_info_var.set(data.get("qslmgr", ""))
 
     root.after(0, update_gui)
 
 def clear_qrz_fields():
-    locator_var.set("")
-    name_var.set("")
-    city_var.set("")
-    address_var.set("")
-    zipcode_var.set("")
-    qsl_info_var.set("")
+    qso_locator_var.set("")
+    qso_name_var.set("")
+    qrz_city_var.set("")
+    qrz_address_var.set("")
+    qrz_zipcode_var.set("")
+    qrz_qsl_info_var.set("")
     QRZ_status_label.config(text="❌ No data", fg="grey", cursor="")
     QRZ_status_label.unbind("<Button-1>")
 
@@ -4279,6 +4598,9 @@ def init():
 
     #
     bota_check()
+
+    #
+    load_iota_references()
 
     # Creating & loading of config.ini
     load_config()
@@ -4367,6 +4689,130 @@ def exit_program():
     else:  # If the user clicked "No"
         return
 
+#########################################################################################
+#  ___ ___ _____ _     ___ ___ ___ ___ ___ ___ _  _  ___ ___ 
+# |_ _/ _ \_   _/_\   | _ \ __| _ \ __| _ \ __| \| |/ __| __|
+#  | | (_) || |/ _ \  |   / _||   / _||   / _|| .` | (__| _| 
+# |___\___/ |_/_/ \_\ |_|_\___|_|_\___|_|_\___|_|\_|\___|___|
+#
+#########################################################################################
+
+def download_iota_file():
+    """Download the IOTA reference file from iota-world.org"""
+    try:
+        response = requests.get(iota_url, timeout=20)
+        response.raise_for_status()
+        DATA_FOLDER.mkdir(parents=True, exist_ok=True)
+        with open(IOTA_FILE, "wb") as f:
+            f.write(response.content)
+        messagebox.showinfo("Download", "IOTA Refence file downloaded successfully.")
+        return True
+    except Exception as e:
+        messagebox.showerror("Download Error", f"Error downloading IOTA Refence file:\n{e}")
+        return False
+
+
+def load_iota_references():
+    """Load IOTA reference data from fulllist.json into a dictionary."""
+    global iota_references
+    iota_references = {}                
+    
+    try:
+        if not os.path.exists(IOTA_FILE):
+            messagebox.showinfo("IOTA Reference File Not Found", f"The file {IOTA_FILE} was not found. It will now be downloaded.")
+            download_iota_file()
+
+
+        with open(IOTA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        iota_references = {entry["refno"]: entry["name"] for entry in data}
+    except Exception as e:
+        messagebox.showerror("IOTA Error", f"Error loading IOTA references:\n{e}")
+        iota_references = {}
+
+def get_continent_from_callsign(callsign):
+    cs = callsign.upper()
+
+    for entry in dxcc_data:
+        prefixes = getattr(entry, "prefixes", [])
+        if any(cs.startswith(pref) for pref in prefixes):
+            return getattr(entry, "continent", None)
+
+    return None
+
+
+def lookup_iota_ref(callsign, iota_number):
+    """
+    Build IOTA ref from callsign + number and return (ref, name).
+    Example: ("PA1ABC", "032") -> ("EU-032", "Island name")
+    """
+    continent = get_continent_from_callsign(callsign)
+
+    if not continent:
+        return None, None
+
+    ref = f"{continent}-{iota_number.zfill(3)}"
+    name = iota_references.get(ref)
+
+    return ref, name
+
+
+
+
+def auto_fill_iota_prefix(iota_var, iota_name_var, iota_lat_var, iota_long_var, qso_callsign_var):
+    """
+    Auto-fill IOTA reference, name, and coordinates based on callsign and number.
+    The coordinates are calculated as the midpoint of the island bounding box from JSON data.
+    If no valid ref is found, all fields remain empty.
+    """
+    callsign = qso_callsign_var.get().strip().upper()
+    entry_text = iota_var.get().strip().upper()
+
+    # Extract only the number: everything after a dash or whole string if no dash
+    if "-" in entry_text:
+        number = entry_text.split("-")[-1]
+    else:
+        number = entry_text
+
+    # Remove leading zeros
+    number = number.lstrip("0")
+
+    # Reset outputs
+    iota_var.set("")
+    iota_name_var.set("")
+    iota_lat_var.set("")
+    iota_long_var.set("")
+
+    if callsign and number:
+        ref, name = lookup_iota_ref(callsign, number)
+        if ref and name:
+            # Alleen vullen als er een geldige ref en name is
+            iota_var.set(ref)
+            iota_name_var.set(name)
+
+            # Lookup coordinates in JSON file
+            try:
+                with open(IOTA_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                # Find entry matching ref
+                entry = next((e for e in data if e["refno"].upper() == ref.upper()), None)
+                if entry:
+                    lat_max = float(entry.get("latitude_max", 0))
+                    lat_min = float(entry.get("latitude_min", 0))
+                    lon_max = float(entry.get("longitude_max", 0))
+                    lon_min = float(entry.get("longitude_min", 0))
+
+                    # Calculate midpoint
+                    mid_lat = (lat_max + lat_min) / 2
+                    mid_lon = (lon_max + lon_min) / 2
+
+                    iota_lat_var.set(str(mid_lat))
+                    iota_long_var.set(str(mid_lon))
+            except Exception as e:
+                print(f"IOTA coordinate lookup failed: {e}")
+
+
+
 
 
 #########################################################################################
@@ -4393,7 +4839,7 @@ def load_pota_references(pota_file=POTA_FILE):
 
     try:
         if not os.path.exists(pota_file):
-            messagebox.showinfo("File Not Found", f"The file {pota_file} was not found. It will now be downloaded.")
+            messagebox.showinfo("POTA Reference File Not Found", f"The file {pota_file} was not found. It will now be downloaded.")
             download_pota_file()
 
         with open(pota_file, newline='', encoding='utf-8') as csvfile:
@@ -4419,21 +4865,24 @@ def get_pota_park_name(ref_code):
     return pota_references.get(ref_code, "")
 
 
-def auto_fill_pota_prefix(entry_var, park_name_var, callsign_var, event=None):
+def auto_fill_pota_prefix(entry_var, park_name_var, qso_callsign_var, event=None):
     """
-    entry_var: StringVar gekoppeld aan POTA entry
-    park_name_var: StringVar gekoppeld aan parknaam label
-    callsign_var: StringVar gekoppeld aan callsign entry
+    Auto-fill POTA reference and park name based on callsign and numeric part.
+    If no valid land code or number is found, all fields remain empty.
     """
     raw_val = entry_var.get().strip()
-    call = callsign_var.get().strip().upper()
-    pota_digits = re.sub(r"\D", "", raw_val)
+    call = qso_callsign_var.get().strip().upper()
 
-    pota_landcode = None  # Altijd initialiseren
+    # Extract only digits from the entry
+    pota_digits = re.sub(r"\D", "", raw_val)
+    pota_digits = pota_digits.lstrip("0")  # Remove leading zeros, don't default to '0'
+
+    pota_landcode = None  # Always initialize
 
     if pota_digits and call:
         land_prefix = None
 
+        # Try to find matching DXCC entry for the callsign
         for entry in dxcc_data:
             match_found = False
             for p in entry.prefixes[1:]:
@@ -4447,26 +4896,29 @@ def auto_fill_pota_prefix(entry_var, park_name_var, callsign_var, event=None):
             if match_found:
                 break
 
+        # Fallback: take first letter(s) of callsign if no DXCC match
         if not land_prefix:
             match = re.match(r"^([A-Z]+)", call)
             if match:
                 land_prefix = match.group(1).upper()
 
-        pota_landcode = dxcc_to_pota_map.get(land_prefix, land_prefix)
+        pota_landcode = dxcc_to_pota_map.get(land_prefix, land_prefix) if land_prefix else None
 
-    if pota_landcode:
-        padded_digits = pota_digits if len(pota_digits) >= 4 else pota_digits.zfill(4)
+    if pota_landcode and pota_digits:
+        # Pad digits to 4 digits
+        padded_digits = pota_digits.zfill(4)
         ref_code = f"{pota_landcode}-{padded_digits}"
         entry_var.set(ref_code)
         update_pota_park_name(ref_code, park_name_var)
     else:
-        # Geen landcode gevonden → alles leegmaken
+        # No valid code or digits → clear everything
         entry_var.set("")
-        park_name_var.set("")        
+        park_name_var.set("")
+
 
 
 def update_pota_park_name(ref_code, park_name_var):
-    """Zoekt de POTA-naam en zet deze in het opgegeven StringVar."""
+    # Finds the POTA name and puts it in the given StringVar
     park_name = pota_references.get(ref_code, "")
     park_name_var.set(park_name)
 
@@ -4486,7 +4938,7 @@ def wwffref_check():
     global wwff_references
     try:
         if not os.path.exists(WWFF_FILE):
-            messagebox.showinfo("File Not Found", "The file wwff_directory.csv was not found. It will now be downloaded.")
+            messagebox.showinfo("WWFF Reference File Not Found", "The file wwff_directory.csv was not found. It will now be downloaded.")
             download_wwffref_file()
 
         wwff_references = {}
@@ -4513,7 +4965,7 @@ def wwffref_check():
 
 def download_wwffref_file():
     try:
-        response = requests.get(wwffref_url)  # wwffref_url moet gedefinieerd zijn als de download-URL
+        response = requests.get(wwffref_url)
         response.raise_for_status()
         
         with open(WWFF_FILE, "wb") as f:
@@ -4524,16 +4976,24 @@ def download_wwffref_file():
         messagebox.showerror("Download Error", f"Failed to download wwff_directory.csv: {e}")
 
 
-def auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, wwff_lat_var, wwff_long_var, callsign_var):
+def auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, wwff_lat_var, wwff_long_var, qso_callsign_var):
+    """
+    Auto-fill WWFF reference, park name, and coordinates based on callsign and numeric part.
+    Only fill fields if a valid land code and digits exist.
+    """
     raw_val = wwff_var.get().strip()
-    call = callsign_var.get().strip().upper()
+    call = qso_callsign_var.get().strip().upper()
+
+    # Extract only digits
     wwff_digits = re.sub(r"\D", "", raw_val)
+    wwff_digits = wwff_digits.lstrip("0")  # don't default to "0"
 
     land_prefix = None
     if wwff_digits and call:
+        # Try to find matching DXCC entry for the callsign
         for entry in dxcc_data:
             match_found = False
-            for p in entry.prefixes[1:]:  # secundaire prefixen
+            for p in entry.prefixes[1:]:
                 if call.startswith(p.upper()):
                     land_prefix = entry.prefixes[0].upper()
                     match_found = True
@@ -4544,29 +5004,34 @@ def auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, wwff_lat_var, wwff_long_
             if match_found:
                 break
 
+        # Fallback: take first letter(s) of callsign if no DXCC match
         if not land_prefix:
             match = re.match(r"^([A-Z]+)", call)
             if match:
                 land_prefix = match.group(1).upper()
 
-    if land_prefix:
+    # Only fill fields if land prefix AND digits exist
+    if land_prefix and wwff_digits:
         ref_code = f"{land_prefix}FF-{wwff_digits.zfill(4)}"
         wwff_var.set(ref_code)
 
         park_info = wwff_references.get(ref_code)
         if park_info:
-            wwff_park_name_var.set(park_info["name"])
-            wwff_lat_var.set(park_info["lat"])
-            wwff_long_var.set(park_info["lon"])
+            wwff_park_name_var.set(park_info.get("name", ""))
+            wwff_lat_var.set(park_info.get("lat", ""))
+            wwff_long_var.set(park_info.get("lon", ""))
         else:
             wwff_park_name_var.set("")
             wwff_lat_var.set("")
             wwff_long_var.set("")
     else:
+        # Clear all fields if invalid
         wwff_var.set("")
         wwff_park_name_var.set("")
         wwff_lat_var.set("")
         wwff_long_var.set("")
+
+
 
 #########################################################################################
 #  ___  ___ _____ _     ___ ___ ___ ___ ___ ___ _  _  ___ ___ 
@@ -4592,12 +5057,12 @@ def bota_check():
     bota_references.clear()
     try:
         if not os.path.exists(BOTA_FILE):
-            messagebox.showinfo("File Not Found", f"The file {BOTA_FILE} was not found. It will now be downloaded.")
+            messagebox.showinfo("BOTA Reference File Not Found", f"The file {BOTA_FILE} was not found. It will now be downloaded.")
             download_bota_file()
 
         with open(BOTA_FILE, encoding="utf-8") as f:
             reader = csv.reader(f)
-            next(reader, None)  # sla header over als aanwezig
+            next(reader, None)
             for parts in reader:
                 if len(parts) >= 7:
                     ref_code = parts[2].strip().upper()
@@ -4609,27 +5074,33 @@ def bota_check():
     except Exception as e:
         messagebox.showerror("Error", f"Error loading BOTA reference list: {e}")
 
-def auto_fill_bota_prefix(bota_var, bota_name_var, bota_lat_var, bota_long_var, callsign_var):
-    raw_val = bota_var.get().strip().upper()
-    call = (callsign_var.get() or "").strip().upper()
-    bota_digits = re.sub(r"\D", "", raw_val)
+def auto_fill_bota_prefix(bota_var, bota_name_var, bota_lat_var, bota_long_var, qso_callsign_var):
+    """
+    Auto-fill BOTA reference, park name, and coordinates based on callsign and numeric part.
+    Only fill fields if a valid land prefix and digits exist.
+    """
+    raw_val = (bota_var.get() or "").strip().upper()
+    call = (qso_callsign_var.get() or "").strip().upper()
 
-    special_prefixes = ["GI", "GW", "GU", "GM", "GJ", "GD"]  # directe landprefix
+    # Extract only digits; no default "0"
+    bota_digits = re.sub(r"\D", "", raw_val).lstrip("0")
+
+    special_prefixes = ["GI", "GW", "GU", "GM", "GJ", "GD"]
     land_prefix = None
 
-    # initialiseer outputs
+    # Reset outputs
     bota_name_var.set("")
     bota_lat_var.set("")
     bota_long_var.set("")
 
     if bota_digits and call:
-        # Eerst: check speciale lijst
+        # Check for special UK prefixes first
         for sp in special_prefixes:
             if call.startswith(sp):
                 land_prefix = sp
                 break
 
-        # Anders: gebruik dxcc_data
+        # Check DXCC data if no special prefix matched
         if not land_prefix:
             for entry in dxcc_data:
                 match_found = False
@@ -4644,17 +5115,18 @@ def auto_fill_bota_prefix(bota_var, bota_name_var, bota_lat_var, bota_long_var, 
                 if match_found:
                     break
 
-        # fallback: gebruik eerste letters/nummers
+        # Fallback: take leading alphanumeric part of callsign
         if not land_prefix:
             m = re.match(r"^([A-Z0-9]+)", call)
             if m:
                 land_prefix = m.group(1).upper()
 
-    # Correctie 9M2 / 9M4 → 9M
+    # Special case for Malaysian prefixes
     if land_prefix in ("9M2", "9M4"):
         land_prefix = "9M"
 
-    if land_prefix:
+    # Only fill fields if both land prefix and digits exist
+    if land_prefix and bota_digits:
         ref_code = f"B/{land_prefix}-{bota_digits.zfill(4)}".upper()
         bota_var.set(ref_code)
 
@@ -4668,8 +5140,9 @@ def auto_fill_bota_prefix(bota_var, bota_name_var, bota_lat_var, bota_long_var, 
             bota_name_var.set("")
             bota_lat_var.set("")
             bota_long_var.set("")
-
-
+    else:
+        # Clear BOTA field if invalid
+        bota_var.set("")
 
 
 
@@ -4769,11 +5242,11 @@ def check_callsign_prefix(callsign, update_ui=True, skip_locator=False):
                 best_prefix_len = len(prefix)
 
     if best_match:
-        global country_var, continent_var
+        global qso_country_var, qso_continent_var
         continent = best_match.continent
         continent_name = continent_map.get(continent, "Unknown")
-        continent_var = continent
-        country_var = best_match.name
+        qso_continent_var = continent
+        qso_country_var = best_match.name
         entityCode = prefix
         itu = str(best_match.itu_zone)
         cq = str(best_match.cq_zone)
@@ -4783,14 +5256,14 @@ def check_callsign_prefix(callsign, update_ui=True, skip_locator=False):
         distance_var_km = tk.StringVar()
         distance_var_miles = tk.StringVar()
 
-        my_call = my_callsign_var.get().strip().upper()
-        my_lat, my_lon = find_coordinates_by_callsign(my_call)
+        station_call = station_callsign_var.get().strip().upper()
+        station_lat, station_lon = find_coordinates_by_callsign(station_call)
 
-        if my_lat is not None and my_lon is not None:
-            sp, lp = calculate_headings(my_lat, my_lon, lat, lon)
+        if station_lat is not None and station_lon is not None:
+            sp, lp = calculate_headings(station_lat, station_lon, lat, lon)
             heading_var.set(f"SP: {sp}°  /  LP: {lp}°")
 
-            distance_km = haversine(my_lat, my_lon, lat, lon)
+            distance_km = haversine(station_lat, station_lon, lat, lon)
             distance_miles = distance_km * 0.621371
 
             distance_var_km.set(f"{distance_km:.1f}km")
@@ -4807,12 +5280,12 @@ def check_callsign_prefix(callsign, update_ui=True, skip_locator=False):
             dxcc_cq_itu_label.config(text=(f"CQ: {cq}, ITU: {itu}"))
 
             # Only calculate from locator if not skipping to avoid recursion
-            if not skip_locator and locator_var.get().strip():
+            if not skip_locator and qso_locator_var.get().strip():
                 calculate_from_locator()
 
     else:
-        continent_var = ""
-        country_var = "[None]"
+        qso_continent_var = ""
+        qso_country_var = "[None]"
         entityCode = ""
 
         if update_ui:
@@ -4826,20 +5299,20 @@ def check_callsign_prefix(callsign, update_ui=True, skip_locator=False):
 
 def calculate_from_locator():
     """
-    Calculates heading and distance based on locator_var and my_locator_var.
+    Calculates heading and distance based on qso_locator_var and station_locator_var.
     If locator is too short (<4), falls back to prefix-based calculation.
     """
-    loc = locator_var.get().strip().upper()
-    my_loc = my_locator_var.get().strip().upper()
+    loc = qso_locator_var.get().strip().upper()
+    station_loc = station_locator_var.get().strip().upper()
 
     # Fallback when locator is too short
     if len(loc) < 4:
         if DEBUG:
             print("[INFO] Locator too short (<4). Falling back to callsign prefix.")
-        check_callsign_prefix(callsign_var.get().strip().upper(), skip_locator=True)
+        check_callsign_prefix(qso_callsign_var.get().strip().upper(), skip_locator=True)
         return
 
-    if not is_valid_locator(loc) or not is_valid_locator(my_loc):
+    if not is_valid_locator(loc) or not is_valid_locator(station_loc):
         return
 
     def locator_to_latlon(locator):
@@ -4863,7 +5336,7 @@ def calculate_from_locator():
         except Exception:
             return None, None
 
-    lat1, lon1 = locator_to_latlon(my_loc)
+    lat1, lon1 = locator_to_latlon(station_loc)
     lat2, lon2 = locator_to_latlon(loc)
 
     if None in (lat1, lon1, lat2, lon2):
@@ -4897,7 +5370,7 @@ def normalize_callsign(call):
 def update_worked_before_tree(*args):
     global qso_lines
 
-    entered_call = callsign_var.get().strip().upper()
+    entered_call = qso_callsign_var.get().strip().upper()
     if not entered_call:
         if DEBUG_WB4:
             print("ℹ️ No callsign entered, clearing tree.")
@@ -4932,9 +5405,9 @@ def update_worked_before_tree(*args):
     workedb4_tree.tag_configure("base_callsign_today", foreground="white", background="blue", font=("TkDefaultFont", 9, "bold"))                   # BLUE
 
     # Current inputs for matching
-    today = date_var.get().strip()
-    current_band = band_var.get().strip() if 'band_var' in globals() else ""
-    current_mode = mode_var.get().strip().upper() if 'mode_var' in globals() else ""
+    today = qso_date_var.get().strip()
+    current_band = qso_band_var.get().strip() if 'qso_band_var' in globals() else ""
+    current_mode = qso_mode_var.get().strip().upper() if 'qso_mode_var' in globals() else ""
 
     if DEBUG_WB4:
         print(f"📅 Today: {today}, Band: {current_band}, Mode: {current_mode}")
@@ -5037,10 +5510,6 @@ def show_color_legend():
 #
 #########################################################################################                        
 
-
-
-
-
 # Main window
 root = tk.Tk()
 
@@ -5049,12 +5518,12 @@ style.theme_use("clam")
 
 if platform.system() == "Darwin": # MacOS
     root.geometry("620x650")
-    root.minsize(620, 650)
+    root.minsize(620, 700)
 else: # Linux, Windows
-    root.geometry("680x760")
-    root.minsize(680, 760)
+    root.geometry("680x810")
+    root.minsize(680, 810)
 
-root.resizable(False, False)
+##root.resizable(False, False)
 
 # Global variable for the logbook window
 Logbook_Window = None
@@ -5063,64 +5532,127 @@ Logbook_Window = None
 load_window_position(root, "MainWindow")
 
 
-# Configuration & Variables
+# Global Configuration & Variables
 config = configparser.ConfigParser()
-date_var = tk.StringVar()
-time_var = tk.StringVar()
-callsign_var = tk.StringVar()
-callsign_var.trace_add('write', lambda *args: check_callsign_prefix(callsign_var.get(),True)) # Trigger check on input change with the callsign value passed to the function
-callsign_var.trace_add("write", update_worked_before_tree)
-callsign_var.trace("w", lambda *args: callsign_var.set(callsign_var.get().upper()))
-name_var = tk.StringVar()
-city_var = tk.StringVar()
-zipcode_var = tk.StringVar()
-address_var = tk.StringVar()
-qsl_info_var = tk.StringVar()
-locator_var = tk.StringVar()
-locator_var.trace("w", lambda *args: locator_var.set(locator_var.get().upper()))
-locator_var.trace_add("write", lambda *args: calculate_from_locator())
-my_locator_var = tk.StringVar()
-my_location_var = tk.StringVar()
-my_callsign_var = tk.StringVar()
-my_operator_var = tk.StringVar()
-my_pota_var = tk.StringVar()
-my_bota_var = tk.StringVar()
-pota_park_name_var = tk.StringVar()
-my_wwff_var = tk.StringVar()
-wwff_park_name_var = tk.StringVar()
-my_qrzapi_var = tk.StringVar()
 
-wwff_var = tk.StringVar()
-wwff_var.trace("w", lambda *args: wwff_var.set(wwff_var.get().upper()))
-wwff_lat_var = tk.StringVar()
-wwff_long_var = tk.StringVar()
-pota_var = tk.StringVar()
-pota_var.trace("w", lambda *args: pota_var.set(pota_var.get().upper()))
+upload_qrz_var = tk.BooleanVar(value=False)
+use_serial_var = tk.BooleanVar(value=False)
+utc_offset_var = tk.StringVar(value="0")
+radio_status_var = tk.StringVar()
+
+datetime_tracking_enabled = tk.BooleanVar(value=True)
+freqmode_tracking_var = tk.BooleanVar(value=False)
+
+
+
+qso_date_var = tk.StringVar()
+qso_time_var = tk.StringVar()
+qso_callsign_var = tk.StringVar()
+qso_callsign_var.trace_add('write', lambda *args: check_callsign_prefix(qso_callsign_var.get(),True)) # Trigger check on input change with the callsign value passed to the function
+qso_callsign_var.trace_add("write", update_worked_before_tree)
+qso_callsign_var.trace("w", lambda *args: qso_callsign_var.set(qso_callsign_var.get().upper()))
+qso_name_var = tk.StringVar()
+qso_locator_var = tk.StringVar()
+qso_locator_var.trace("w", lambda *args: qso_locator_var.set(qso_locator_var.get().upper()))
+qso_locator_var.trace_add("write", lambda *args: calculate_from_locator())
+qso_country_var = tk.StringVar()
+qso_continent_var = tk.StringVar()
+qso_rst_sent_var = tk.StringVar(value="59")
+qso_rst_received_var = tk.StringVar(value="59")
+qso_sent_exchange_var = tk.StringVar(value="1")
+qso_receive_exchange_var = tk.StringVar()
+qso_comment_var = tk.StringVar()
+qso_frequency_var = tk.StringVar()
+qso_band_var = tk.StringVar(value="20m")
+qso_band_var.trace_add("write", update_worked_before_tree)
+qso_mode_var = tk.StringVar(value="USB")
+qso_mode_var.trace_add("write", update_worked_before_tree)
+qso_submode_var = tk.StringVar(value="")
+qso_satellite_var = tk.StringVar(value="")
+
+qrz_username_var = tk.StringVar()
+qrz_password_var = tk.StringVar()
+qrz_city_var = tk.StringVar()
+qrz_zipcode_var = tk.StringVar()
+qrz_address_var = tk.StringVar()
+qrz_qsl_info_var = tk.StringVar()
+
+station_locator_var = tk.StringVar()
+station_location_var = tk.StringVar()
+station_callsign_var = tk.StringVar()
+station_operator_var = tk.StringVar()
+
+station_name_var = tk.StringVar()
+station_city_var = tk.StringVar()
+station_street_var =tk.StringVar()
+station_postalcode_var = tk.StringVar()
+station_county_var = tk.StringVar()
+station_country_var = tk.StringVar()
+station_cqzone_var = tk.StringVar()
+station_ituzone_var = tk.StringVar()
+
+station_contest_var = tk.StringVar()
+
+station_bota_var = tk.StringVar()
+station_cota_var = tk.StringVar()
+station_iota_var = tk.StringVar()
+station_pota_var = tk.StringVar()
+station_sota_var = tk.StringVar()
+station_wlota_var = tk.StringVar()
+station_wwff_var = tk.StringVar()
+station_qrzapi_var = tk.StringVar()
+
+# Bunkers On The Air
 bota_var = tk.StringVar()
 bota_var.trace("w", lambda *args: bota_var.set(bota_var.get().upper()))
 bota_name_var = tk.StringVar()
 bota_lat_var = tk.StringVar()
 bota_long_var = tk.StringVar()
 
-country_var = tk.StringVar()
-continent_var = tk.StringVar()
-rst_sent_var = tk.StringVar(value="59")
-rst_received_var = tk.StringVar(value="59")
-comment_var = tk.StringVar()
-frequency_var = tk.StringVar()
-band_var = tk.StringVar(value="20m")
-band_var.trace_add("write", update_worked_before_tree)
-mode_var = tk.StringVar(value="USB")
-mode_var.trace_add("write", update_worked_before_tree)
-submode_var = tk.StringVar(value="")
-satellite_var = tk.StringVar(value="")
-utc_offset_var = tk.StringVar(value="0")
-radio_status_var = tk.StringVar()
-datetime_tracking_enabled = tk.BooleanVar(value=True)
-freqmode_tracking_var = tk.BooleanVar(value=False)
-qrz_username_var = tk.StringVar()
-qrz_password_var = tk.StringVar()
-upload_qrz_var = tk.BooleanVar(value=False)
+# Castles On The Air
+cota_var = tk.StringVar()
+cota_var.trace("w", lambda *args: cota_var.set(cota_var.get().upper()))
+cota_name_var = tk.StringVar()
+cota_lat_var = tk.StringVar()
+cota_long_var = tk.StringVar()
+
+# Islands On The Air
+iota_var = tk.StringVar()
+iota_var.trace("w", lambda *args: iota_var.set(iota_var.get().upper()))
+iota_name_var = tk.StringVar()
+iota_lat_var = tk.StringVar()
+iota_long_var = tk.StringVar()
+
+# Parks On The Air
+pota_var = tk.StringVar()
+pota_var.trace("w", lambda *args: pota_var.set(pota_var.get().upper()))
+pota_park_name_var = tk.StringVar()
+
+# Summits On The Air
+sota_var = tk.StringVar()
+sota_var.trace("w", lambda *args: sota_var.set(sota_var.get().upper()))
+
+# World Lighthouse On The Air
+wlota_var = tk.StringVar()
+wlota_var.trace("w", lambda *args: wlota_var.set(wlota_var.get().upper()))
+
+# World Wide Flora Fauna
+wwff_var = tk.StringVar()
+wwff_var.trace("w", lambda *args: wwff_var.set(wwff_var.get().upper()))
+wwff_lat_var = tk.StringVar()
+wwff_long_var = tk.StringVar()
+wwff_park_name_var = tk.StringVar()
+
+
+
+
+
+
+
+
+
+
+
 
 
 # Preparation of hamlib in Threaded mode
@@ -5142,8 +5674,8 @@ def update_datetime():
             print("Invalid UTC offset, defaulting to 0.")
 
         now = datetime.now() + timedelta(hours=utc_offset)
-        time_var.set(now.strftime("%H:%M:%S"))
-        date_var.set(now.strftime("%Y-%m-%d"))
+        qso_time_var.set(now.strftime("%H:%M:%S"))
+        qso_date_var.set(now.strftime("%Y-%m-%d"))
         root.after(1000, update_datetime)  # Schedule next update
 
 # Define toggle function for the checkbox
@@ -5186,7 +5718,10 @@ tracking_menu = tk.Menu(menu_bar, tearoff=0)
 menu_bar.add_cascade(label="Tracking", menu=tracking_menu)
 # Add "Time" checkbox in Tracking menu
 tracking_menu.add_checkbutton(label="Date & Time", variable=datetime_tracking_enabled, command=toggle_datetime_tracking)
-tracking_menu.add_checkbutton(label="Radio Frequency & Mode", variable=freqmode_tracking_var, command=toggle_freq_mode)
+
+radio_menu = tk.Menu(menu_bar, tearoff=0)
+menu_bar.add_cascade(label="Radio", menu=radio_menu)
+radio_menu.add_checkbutton(label="Frequency & Mode Polling", variable=freqmode_tracking_var, command=toggle_freq_mode)
 
 view_menu = tk.Menu(menu_bar, tearoff=0)
 view_menu.add_command(label="Logbook", command=view_logbook)
@@ -5197,8 +5732,6 @@ menu_bar.add_cascade(label="Window", menu=view_menu)
 
 # --- Reference Menu ---
 reference_menu = tk.Menu(menu_bar, tearoff=0)
-reference_menu.add_command(label="DX Summit", command=lambda: webbrowser.open("http://www.dxsummit.fi/#/"))
-reference_menu.add_separator()
 reference_menu.add_command(label="POTA Activations", command=lambda: webbrowser.open("https://pota.app/#/"))
 reference_menu.add_command(label="POTA Map", command=lambda: webbrowser.open("https://pota.app/#/map"))
 reference_menu.add_command(label="POTA List", command=lambda: webbrowser.open("https://pota.app/#/parklist"))
@@ -5209,8 +5742,13 @@ reference_menu.add_command(label="WWFF Global Map", command=lambda: webbrowser.o
 reference_menu.add_command(label="WWFF Announce activation", command=lambda: webbrowser.open("https://www.cqgma.org/alertwwfflight.php"))
 reference_menu.add_separator()
 reference_menu.add_command(label="WW BOTA Map", command=lambda: webbrowser.open("https://wwbota.org/map/"))
-#reference_menu.add_separator()
-#reference_menu.add_command(label="SOTA Watch", command=lambda: webbrowser.open("https://sotawatch.sota.org.uk/"))
+reference_menu.add_separator()
+reference_menu.add_command(label="IOTA", command=lambda: webbrowser.open("https://www.iota-world.org/"))
+reference_menu.add_separator()
+reference_menu.add_command(label="SOTA Watch", command=lambda: webbrowser.open("https://sotawatch.sota.org.uk/"))
+reference_menu.add_command(label="SOTA Maps", command=lambda: webbrowser.open("https://www.sotamaps.org/"))
+reference_menu.add_separator()
+reference_menu.add_command(label="World lighthouse OTA", command=lambda: webbrowser.open("https://www.wlota.com/"))
 menu_bar.add_cascade(label="References", menu=reference_menu)
 
 help_menu = tk.Menu(menu_bar, tearoff=0)
@@ -5220,6 +5758,7 @@ help_menu.add_command(label="Download latest CTY.DAT file", command=download_cty
 help_menu.add_command(label="Download latest Pota reference file", command=download_pota_file)
 help_menu.add_command(label="Download latest WWFF reference file", command=download_wwffref_file)
 help_menu.add_command(label="Download latest BOTA reference file", command=download_bota_file)
+help_menu.add_command(label="Download latest IOTA reference file", command=download_iota_file)
 help_menu.add_command(label="Download Satellites Names", command=download_satellites)
 help_menu.add_separator()
 help_menu.add_command(label="About", command=show_about)
@@ -5230,23 +5769,23 @@ root.config(menu=menu_bar)
 
 # Function to update frequency based on band selection
 def update_frequency_from_band(*args):
-    selected_band = band_var.get()
+    selected_band = qso_band_var.get()
     default_frequency = band_to_frequency.get(selected_band, "")
-    frequency_var.set(default_frequency)
+    qso_frequency_var.set(default_frequency)
 
 # Function to check frequency and update the band if needed
 def update_band_from_frequency(*args):
-    frequency = frequency_var.get()
+    frequency = qso_frequency_var.get()
     
     try:
         frequency = float(frequency)
         for band, (low, high) in band_ranges.items():
             if low <= frequency <= high:
                 # Frequency is within the band range, set the band
-                band_var.set(band)
+                qso_band_var.set(band)
                 break
         else:
-            band_var.set("OOB")
+            qso_band_var.set("OOB")
             # If frequency is outside the known bands, don't change the band show Out Of Band
             pass
     except ValueError:
@@ -5259,7 +5798,7 @@ def on_focus(event):
     event.widget.icursor(tk.END)    # Move cursor to the end
 
 def on_keypress(event):
-    current_value = frequency_var.get()
+    current_value = qso_frequency_var.get()
     
     if event.keysym in ("BackSpace","Tab","Return"):
         # Allow normal backspace behavior
@@ -5283,17 +5822,17 @@ def reset_focus_color(event):
 
 
 def handle_callsign_from_spot(callsign, freq=None, mode=None):
-    callsign_var.set(callsign)
+    qso_callsign_var.set(callsign)
     callsign_entry.focus_set()
     callsign_entry.icursor(tk.END)
 
     # If frequency tracking is not active then update frequency and mode entries
     if not freqmode_tracking_var.get():
         if freq:
-            frequency_var.set(freq)
+            qso_frequency_var.set(freq)
 
         if mode and mode in mode_combobox['values']:
-            mode_var.set(mode)
+            qso_mode_var.set(mode)
 
     use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=False)
     if use_qrz:
@@ -5337,41 +5876,57 @@ style.configure('TNotebook.Tab', font=('Arial', 10, 'bold'))
 
 
 # MY INFO FRAME
-my_info_frame = tk.LabelFrame(root, bd=2, font=('Arial', 10, 'bold'), relief='groove', text="Station Information", labelanchor="n", pady=Internal_Y_Padding, bg='lightgrey')
-my_info_frame.grid(row=My_Info_Frame_row, column=0, columnspan=7, sticky='ew', padx=5, pady=Frame_Y_Padding)
+station_info_frame = tk.LabelFrame(root, bd=2, font=('Arial', 10, 'bold'), relief='groove', text="Station Information", labelanchor="n", pady=Internal_Y_Padding, bg='lightgrey')
+station_info_frame.grid(row=My_Info_Frame_row, column=0, columnspan=7, sticky='ew', padx=5, pady=Frame_Y_Padding)
 
 for i in range(6):
-    my_info_frame.grid_columnconfigure(i, weight=1)
+    station_info_frame.grid_columnconfigure(i, weight=1)
 
-tk.Label(my_info_frame, text="Callsign:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=0, sticky='e', padx=5)
-my_callsign_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-my_callsign_entry.grid(row=0, column=1, sticky='w', padx=5)
+tk.Label(station_info_frame, text="Callsign:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=0, sticky='e', padx=5)
+station_callsign_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_callsign_entry.grid(row=0, column=1, sticky='w', padx=5)
 
-tk.Label(my_info_frame, text="Operator:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=2, sticky='e', padx=5)
-my_operator_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-my_operator_entry.grid(row=0, column=3, sticky='w', padx=5)
+tk.Label(station_info_frame, text="Operator:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=2, sticky='e', padx=5)
+station_operator_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_operator_entry.grid(row=0, column=3, sticky='w', padx=5)
 
-tk.Label(my_info_frame, text="Locator:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=4, sticky='e', padx=5)
-my_locator_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-my_locator_entry.grid(row=0, column=5, sticky='w', padx=5)
+tk.Label(station_info_frame, text="Locator:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=4, sticky='e', padx=5)
+station_locator_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_locator_entry.grid(row=0, column=5, sticky='w', padx=5)
 
-tk.Label(my_info_frame, text="Location:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=0, sticky='e', padx=5)
-my_location_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-my_location_entry.grid(row=1, column=1, sticky='w', padx=5)
+'''
+tk.Label(station_info_frame, text="Location:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=0, sticky='e', padx=5)
+station_location_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_location_entry.grid(row=1, column=1, sticky='w', padx=5)
+'''
 
-tk.Label(my_info_frame, text="WWFF:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=2, sticky='e', padx=5)
-my_wwff_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-my_wwff_entry.grid(row=1, column=3, sticky='w', padx=5)
+tk.Label(station_info_frame, text="BOTA:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=0, sticky='e', padx=5)
+station_bota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_bota_entry.grid(row=1, column=1, sticky='w', padx=5)
 
-tk.Label(my_info_frame, text="POTA:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=4, sticky='e', padx=5)
-my_pota_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-my_pota_entry.grid(row=1, column=5, sticky='w', padx=5)
+tk.Label(station_info_frame, text="COTA:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=2, sticky='e', padx=5)
+station_cota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_cota_entry.grid(row=1, column=3, sticky='w', padx=5)
 
-tk.Label(my_info_frame, text="BOTA:", font=('Arial', 10), bg='lightgrey').grid(row=2, column=0, sticky='e', padx=5)
-my_bota_entry = tk.Entry(my_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-my_bota_entry.grid(row=2, column=1, sticky='w', padx=5)
+tk.Label(station_info_frame, text="IOTA:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=4, sticky='e', padx=5)
+station_iota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_iota_entry.grid(row=1, column=5, sticky='w', padx=5)
 
+tk.Label(station_info_frame, text="POTA:", font=('Arial', 10), bg='lightgrey').grid(row=2, column=0, sticky='e', padx=5)
+station_pota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_pota_entry.grid(row=2, column=1, sticky='w', padx=5)
 
+tk.Label(station_info_frame, text="SOTA:", font=('Arial', 10), bg='lightgrey').grid(row=2, column=2, sticky='e', padx=5)
+station_sota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_sota_entry.grid(row=2, column=3, sticky='w', padx=5)
+
+tk.Label(station_info_frame, text="WLOTA:", font=('Arial', 10), bg='lightgrey').grid(row=2, column=4, sticky='e', padx=5)
+station_wlota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_wlota_entry.grid(row=2, column=5, sticky='w', padx=5)
+
+tk.Label(station_info_frame, text="WWFF:", font=('Arial', 10), bg='lightgrey').grid(row=3, column=0, sticky='e', padx=5)
+station_wwff_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_wwff_entry.grid(row=3, column=1, sticky='w', padx=5)
 
 
 
@@ -5386,13 +5941,13 @@ for i, width in enumerate(shared_column_widths):
 
 # DATE
 tk.Label(DateTime_frame, text="Date:", font=('Arial', 10)).grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='e')
-date_entry = DateEntry(DateTime_frame, textvariable=date_var, date_pattern='yyyy-mm-dd', font=('Arial', 10, 'bold'))
+date_entry = DateEntry(DateTime_frame, textvariable=qso_date_var, date_pattern='yyyy-mm-dd', font=('Arial', 10, 'bold'))
 date_entry.grid(row=0, column=2, padx=5, pady=Internal_Y_Padding, sticky='w')
 date_entry.configure(takefocus=False)
 
 # TIME
 tk.Label(DateTime_frame, text="Time:", font=('Arial', 10)).grid(row=0, column=4, padx=5, pady=Internal_Y_Padding, sticky='e')
-time_entry = tk.Entry(DateTime_frame, textvariable=time_var, font=('Arial', 10, 'bold'), width=10)
+time_entry = tk.Entry(DateTime_frame, textvariable=qso_time_var, font=('Arial', 10, 'bold'), width=10)
 time_entry.grid(row=0, column=5, padx=5, pady=Internal_Y_Padding, sticky='w')
 time_entry.configure(takefocus=False)
 
@@ -5409,77 +5964,127 @@ for i, width in enumerate(shared_column_widths):
 
 # CALLSIGN
 tk.Label(MainEntry_frame, text="Callsign:", font=('Arial', 10)).grid(row=0, column=0, padx=5, sticky='e')
-callsign_entry = tk.Entry(MainEntry_frame, textvariable=callsign_var, font=('Arial', 14, 'bold'), width=14)
+callsign_entry = tk.Entry(MainEntry_frame, textvariable=qso_callsign_var, font=('Arial', 14, 'bold'), width=14)
 callsign_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 callsign_entry.bind("<Return>", handle_callsign_or_frequency_entry)
 callsign_entry.bind("<Tab>", on_tab_press)
 callsign_entry.bind("<FocusIn>", set_focus_color)
 callsign_entry.bind("<FocusOut>", reset_focus_color)
 
+def toggle_serial_fields():
+    state = "normal" if use_serial_var.get() else "disabled"
+    sent_exchange_entry.config(state=state)
+    receive_exchange_entry.config(state=state)
+
+    # New: Fetch and increment STX on check
+    if use_serial_var.get() and current_json_file:
+        try:
+            with open(current_json_file, 'r', encoding='utf-8') as file:
+                data = json.load(file)
+                logbook = data.get("Logbook", [])
+
+            # Find last non-empty Sent Exchange
+            last_stx = None
+            for qso in reversed(logbook):
+                stx_val = qso.get("Sent Exchange", "").strip()
+                if stx_val.isdigit():
+                    last_stx = int(stx_val)
+                    break
+
+            if last_stx is not None:
+                new_stx = last_stx + 1
+                sent_exchange_entry.delete(0, tk.END)
+                sent_exchange_entry.insert(0, str(new_stx))
+
+        except Exception as e:
+            print(f"Error retrieving last STX: {e}")
+
+
+tk.Label(MainEntry_frame, text="Contest:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='e')
+
+use_serial_checkbox = tk.Checkbutton(MainEntry_frame, text='Use Serial',variable=use_serial_var, command=toggle_serial_fields)
+use_serial_checkbox.grid(row=1, column=1, padx=5, sticky='w')
+
 # SENT
 tk.Label(MainEntry_frame, text="Sent:", font=('Arial', 10)).grid(row=0, column=2, padx=5, sticky='e')
-rst_sent_combobox = ttk.Combobox(MainEntry_frame, textvariable=rst_sent_var, values=rst_options, font=('Arial', 14, 'bold'), width=8)
+rst_sent_combobox = ttk.Combobox(MainEntry_frame, textvariable=qso_rst_sent_var, values=rst_options, font=('Arial', 14, 'bold'), width=8)
 rst_sent_combobox.grid(row=0, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
+
+# SENT Exchange
+tk.Label(MainEntry_frame, text="Sent #:", font=('Arial', 10)).grid(row=1, column=2, padx=5, sticky='e')
+sent_exchange_entry = tk.Entry(MainEntry_frame, textvariable=qso_sent_exchange_var, font=('Arial', 14, 'bold'), width=6)
+sent_exchange_entry.grid(row=1, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
+sent_exchange_entry.bind("<FocusIn>", set_focus_color)
+sent_exchange_entry.bind("<FocusOut>", reset_focus_color)
 
 # RECEIVED
 tk.Label(MainEntry_frame, text="Received:", font=('Arial', 10)).grid(row=0, column=4, padx=5, sticky='e')
-rst_received_combobox = ttk.Combobox(MainEntry_frame, textvariable=rst_received_var, values=rst_options, font=('Arial', 14, 'bold'), width=8)
+rst_received_combobox = ttk.Combobox(MainEntry_frame, textvariable=qso_rst_received_var, values=rst_options, font=('Arial', 14, 'bold'), width=8)
 rst_received_combobox.grid(row=0, column=5, padx=5, pady=Internal_Y_Padding, sticky='w')
 
+# RECEIVE Exchange
+tk.Label(MainEntry_frame, text="Rcv. #:", font=('Arial', 10)).grid(row=1, column=4, padx=5, sticky='e')
+receive_exchange_entry = tk.Entry(MainEntry_frame, textvariable=qso_receive_exchange_var, font=('Arial', 14, 'bold'), width=6)
+receive_exchange_entry.grid(row=1, column=5, padx=5, pady=Internal_Y_Padding, sticky='w')
+receive_exchange_entry.bind("<FocusIn>", set_focus_color)
+receive_exchange_entry.bind("<FocusOut>", reset_focus_color)
+
+toggle_serial_fields() #Turn off entry fields by default
+
 # LOCATOR
-tk.Label(MainEntry_frame, text="Locator:", font=('Arial', 10)).grid(row=1, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
-locator_entry = tk.Entry(MainEntry_frame, textvariable=locator_var, font=('Arial', 14, 'bold'), width=12)
-locator_entry.grid(row=1, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+tk.Label(MainEntry_frame, text="Locator:", font=('Arial', 10)).grid(row=2, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+locator_entry = tk.Entry(MainEntry_frame, textvariable=qso_locator_var, font=('Arial', 14, 'bold'), width=12)
+locator_entry.grid(row=2, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 locator_entry.bind("<FocusIn>", set_focus_color)
 locator_entry.bind("<FocusOut>", reset_focus_color)
 
 # MODE
-tk.Label(MainEntry_frame, text="Mode:", font=('Arial', 10)).grid(row=1, column=2, padx=5, pady=Internal_Y_Padding, sticky='e')
-mode_combobox = ttk.Combobox(MainEntry_frame, textvariable=mode_var, values=mode_options, font=('Arial', 14, 'bold'), width=8, state='readonly')
-mode_combobox.grid(row=1, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
+tk.Label(MainEntry_frame, text="Mode:", font=('Arial', 10)).grid(row=2, column=2, padx=5, pady=Internal_Y_Padding, sticky='e')
+mode_combobox = ttk.Combobox(MainEntry_frame, textvariable=qso_mode_var, values=mode_options, font=('Arial', 14, 'bold'), width=8, state='readonly')
+mode_combobox.grid(row=2, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
 mode_combobox.bind("<<ComboboxSelected>>", on_mode_change)
 
 # SUBMODE
-tk.Label(MainEntry_frame, text="Submode:", font=('Arial', 10)).grid(row=1, column=4, padx=5, pady=Internal_Y_Padding, sticky='e')
-submode_combobox = ttk.Combobox(MainEntry_frame, textvariable=submode_var, values=submode_options, font=('Arial', 14, 'bold'), width=8, state='readonly')
-submode_combobox.grid(row=1, column=5, padx=5, pady=Internal_Y_Padding, sticky='w')
+tk.Label(MainEntry_frame, text="Submode:", font=('Arial', 10)).grid(row=2, column=4, padx=5, pady=Internal_Y_Padding, sticky='e')
+submode_combobox = ttk.Combobox(MainEntry_frame, textvariable=qso_submode_var, values=submode_options, font=('Arial', 14, 'bold'), width=8, state='readonly')
+submode_combobox.grid(row=2, column=5, padx=5, pady=Internal_Y_Padding, sticky='w')
 submode_combobox.configure(takefocus=False)
 
 # BAND
-tk.Label(MainEntry_frame, text="Band:", font=('Arial', 10)).grid(row=2, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
-band_combobox = ttk.Combobox(MainEntry_frame, width=8, textvariable=band_var, values=list(band_to_frequency.keys()), font=('Arial', 14, 'bold'), state='readonly')
-band_combobox.grid(row=2, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+tk.Label(MainEntry_frame, text="Band:", font=('Arial', 10)).grid(row=3, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+band_combobox = ttk.Combobox(MainEntry_frame, width=8, textvariable=qso_band_var, values=list(band_to_frequency.keys()), font=('Arial', 14, 'bold'), state='readonly')
+band_combobox.grid(row=3, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 band_combobox.bind("<<ComboboxSelected>>", update_frequency_from_band)
 
 # FREQUENCY
-tk.Label(MainEntry_frame, text="Freq (MHz):", font=('Arial', 10)).grid(row=2, column=2, padx=5, pady=Internal_Y_Padding, sticky='e')
-freq_entry = tk.Entry(MainEntry_frame, textvariable=frequency_var, font=('Arial', 14, 'bold'), width=10)
-freq_entry.grid(row=2, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
+tk.Label(MainEntry_frame, text="Freq (MHz):", font=('Arial', 10)).grid(row=3, column=2, padx=5, pady=Internal_Y_Padding, sticky='e')
+freq_entry = tk.Entry(MainEntry_frame, textvariable=qso_frequency_var, font=('Arial', 14, 'bold'), width=10)
+freq_entry.grid(row=3, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
 freq_entry.bind("<FocusIn>", on_focus)
 freq_entry.bind("<FocusIn>", set_focus_color)
 freq_entry.bind("<FocusOut>", reset_focus_color)
 freq_entry.bind("<KeyPress>", on_keypress)
-frequency_var.trace("w", update_band_from_frequency)
+qso_frequency_var.trace("w", update_band_from_frequency)
 
 # SATELLITE
-tk.Label(MainEntry_frame, text="Satellite:", font=('Arial', 10)).grid(row=2, column=4, padx=5, pady=Internal_Y_Padding, sticky='e')
+tk.Label(MainEntry_frame, text="Satellite:", font=('Arial', 10)).grid(row=3, column=4, padx=5, pady=Internal_Y_Padding, sticky='e')
 satellite_list = load_satellite_names()
 satellite_list.insert(0, "")
-satellite_var = tk.StringVar()
-satellite_dropdown = ttk.Combobox(MainEntry_frame, textvariable=satellite_var, values=satellite_list, font=('Arial', 14, 'bold'), width=8, state="readonly")
-satellite_dropdown.grid(row=2, column=5, padx=5, pady=Internal_Y_Padding, sticky='ew')
+qso_satellite_var = tk.StringVar()
+satellite_dropdown = ttk.Combobox(MainEntry_frame, textvariable=qso_satellite_var, values=satellite_list, font=('Arial', 14, 'bold'), width=8, state="readonly")
+satellite_dropdown.grid(row=3, column=5, padx=5, pady=Internal_Y_Padding, sticky='ew')
 
 # NAME
-tk.Label(MainEntry_frame, text="Name:", font=('Arial', 10)).grid(row=3, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
-name_entry = tk.Entry(MainEntry_frame, textvariable=name_var, font=('Arial', 12, 'bold'))
-name_entry.grid(row=3, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+tk.Label(MainEntry_frame, text="Name:", font=('Arial', 10)).grid(row=4, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+name_entry = tk.Entry(MainEntry_frame, textvariable=qso_name_var, font=('Arial', 12, 'bold'))
+name_entry.grid(row=4, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 name_entry.bind("<FocusIn>", set_focus_color)
 name_entry.bind("<FocusOut>", reset_focus_color)
 
 # COMMENT
-tk.Label(MainEntry_frame, text="Comment:", font=('Arial', 10)).grid(row=3, column=2, padx=5, pady=Internal_Y_Padding, sticky='e')
-comment_entry = tk.Entry(MainEntry_frame, textvariable=comment_var, font=('Arial', 12, 'bold'))
-comment_entry.grid(row=3, column=3, columnspan=3, padx=5, pady=Internal_Y_Padding, sticky='ew')
+tk.Label(MainEntry_frame, text="Comment:", font=('Arial', 10)).grid(row=4, column=2, padx=5, pady=Internal_Y_Padding, sticky='e')
+comment_entry = tk.Entry(MainEntry_frame, textvariable=qso_comment_var, font=('Arial', 12, 'bold'))
+comment_entry.grid(row=4, column=3, columnspan=3, padx=5, pady=Internal_Y_Padding, sticky='ew')
 comment_entry.bind("<FocusIn>", set_focus_color)
 comment_entry.bind("<FocusOut>", reset_focus_color)
 
@@ -5493,51 +6098,6 @@ comment_entry.bind("<FocusOut>", reset_focus_color)
 notebook = ttk.Notebook(root)
 notebook.grid(row=WWFFPOTA_Frame_row, column=0, columnspan=99, sticky='nsew', padx=5, pady=Frame_Y_Padding)
 
-# WWFF tab
-wwff_tab = tk.Frame(notebook)
-notebook.add(wwff_tab, text="WWFF")
-
-wwff_tab.grid_columnconfigure(0, weight=0, minsize=70)
-wwff_tab.grid_columnconfigure(1, weight=1)
-wwff_tab.grid_columnconfigure(2, weight=0)
-
-tk.Label(wwff_tab, text="Ref no.:", font=('Arial', 10)).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
-wwff_entry = tk.Entry(wwff_tab, textvariable=wwff_var, font=('Arial', 14, 'bold'), width=10)
-wwff_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
-wwff_entry.bind("<FocusIn>", set_focus_color)
-wwff_entry.bind(
-    "<FocusOut>",
-    lambda e: auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, wwff_lat_var, wwff_long_var, callsign_var)
-)
-
-wwff_map_button = tk.Button(wwff_tab, text="Show Park on Map", 
-                            command=lambda: open_osm_map(    wwff_lat_var, wwff_long_var, my_locator_var, my_callsign_var, wwff_var.get(), wwff_park_name_var.get()))
-wwff_map_button.grid(row=0, column=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
-
-tk.Label(wwff_tab, text="Park Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
-tk.Label(wwff_tab, textvariable=wwff_park_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=5, sticky='w')
-
-# POTA tab
-pota_tab = tk.Frame(notebook)
-notebook.add(pota_tab, text="POTA")
-
-pota_tab.grid_columnconfigure(0, weight=0, minsize=70)
-pota_tab.grid_columnconfigure(1, weight=1)
-
-tk.Label(pota_tab, text="Ref no.:", font=('Arial', 10)).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
-pota_entry = tk.Entry(pota_tab, textvariable=pota_var, font=('Arial', 14, 'bold'), width=10)
-pota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
-pota_entry.bind("<FocusIn>", set_focus_color)
-pota_entry.bind(
-    "<FocusOut>",
-    lambda e: auto_fill_pota_prefix(pota_var, pota_park_name_var, callsign_var)
-)
-
-
-tk.Label(pota_tab, text="Park Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
-tk.Label(pota_tab, textvariable=pota_park_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=5, sticky='w')
-
-
 # BOTA tab
 bota_tab = tk.Frame(notebook)
 notebook.add(bota_tab, text="BOTA")
@@ -5546,21 +6106,138 @@ bota_tab.grid_columnconfigure(0, weight=0, minsize=70)
 bota_tab.grid_columnconfigure(1, weight=1)
 bota_tab.grid_columnconfigure(2, weight=0)
 
-tk.Label(bota_tab, text="Ref no.:", font=('Arial', 10)).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
-bota_entry = tk.Entry(bota_tab, textvariable=bota_var, font=('Arial', 14, 'bold'), width=10)
+tk.Label(bota_tab, text="Ref no.:", font=('Arial', 10), width=12).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+bota_entry = tk.Entry(bota_tab, textvariable=bota_var, font=('Arial', 14, 'bold'), width=12)
 bota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 bota_entry.bind("<FocusIn>", set_focus_color)
-bota_entry.bind(
-    "<FocusOut>",
-    lambda e: auto_fill_bota_prefix(bota_var, bota_name_var, bota_lat_var, bota_long_var, callsign_var)
-)
+bota_entry.bind("<FocusOut>", lambda e: auto_fill_bota_prefix(bota_var, bota_name_var, bota_lat_var, bota_long_var, qso_callsign_var))
 
-bota_map_button = tk.Button(bota_tab, text="Show Bunker on Map", 
-                            command=lambda: open_osm_map(bota_lat_var, bota_long_var, my_locator_var, my_callsign_var, bota_var.get(), bota_name_var.get()))
-bota_map_button.grid(row=0, column=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
+bota_map_button = tk.Button(bota_tab, text="Show Bunker on Map", command=lambda: open_osm_map(bota_lat_var, bota_long_var, station_locator_var, station_callsign_var, bota_var.get(), bota_name_var.get()))
+bota_map_button.grid(row=0, column=2, rowspan=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
 
 tk.Label(bota_tab, text="Bunker Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
 tk.Label(bota_tab, textvariable=bota_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=5, sticky='w')
+
+# COTA tab
+cota_tab = tk.Frame(notebook)
+notebook.add(cota_tab, text="COTA")
+
+cota_tab.grid_columnconfigure(0, weight=0, minsize=70)
+cota_tab.grid_columnconfigure(1, weight=1)
+cota_tab.grid_columnconfigure(2, weight=0)
+
+tk.Label(cota_tab, text="Ref no.:", font=('Arial', 10), width=12).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+bota_entry = tk.Entry(cota_tab, textvariable=cota_var, font=('Arial', 14, 'bold'), width=12)
+bota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+bota_entry.bind("<FocusIn>", set_focus_color)
+
+
+# IOTA tab
+iota_tab = tk.Frame(notebook)
+notebook.add(iota_tab, text="IOTA")
+
+iota_tab.grid_columnconfigure(0, weight=0, minsize=70)
+iota_tab.grid_columnconfigure(1, weight=1)
+
+tk.Label(iota_tab, text="Ref no.:", font=('Arial', 10), width=12).grid(
+    row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e'
+)
+iota_entry = tk.Entry(iota_tab, textvariable=iota_var, font=('Arial', 14, 'bold'), width=12)
+iota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+iota_entry.bind("<FocusIn>", set_focus_color)
+# Call updated auto_fill_iota_prefix including lat/lon vars
+iota_entry.bind("<FocusOut>", lambda e: auto_fill_iota_prefix(iota_var, iota_name_var, iota_lat_var, iota_long_var, qso_callsign_var))
+
+# Map button now uses iota_lat_var and iota_long_var
+iota_map_button = tk.Button(iota_tab, text="Show Island on Map",
+                            command=lambda: open_osm_map(iota_lat_var, iota_long_var,
+                                                         station_locator_var, station_callsign_var,
+                                                         iota_var.get(), iota_name_var.get()))
+iota_map_button.grid(row=0, column=2, rowspan=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
+
+tk.Label(iota_tab, text="Island Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
+tk.Label(iota_tab, textvariable=iota_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=5, sticky='w')
+
+
+
+# POTA tab
+pota_tab = tk.Frame(notebook)
+notebook.add(pota_tab, text="POTA")
+
+pota_tab.grid_columnconfigure(0, weight=0, minsize=70)
+pota_tab.grid_columnconfigure(1, weight=1)
+
+tk.Label(pota_tab, text="Ref no.:", font=('Arial', 10), width=12).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+pota_entry = tk.Entry(pota_tab, textvariable=pota_var, font=('Arial', 14, 'bold'), width=12)
+pota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+pota_entry.bind("<FocusIn>", set_focus_color)
+pota_entry.bind("<FocusOut>", lambda e: auto_fill_pota_prefix(pota_var, pota_park_name_var, qso_callsign_var))
+
+
+tk.Label(pota_tab, text="Park Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
+tk.Label(pota_tab, textvariable=pota_park_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=5, sticky='w')
+
+# SOTA tab
+sota_tab = tk.Frame(notebook)
+notebook.add(sota_tab, text="SOTA")
+
+sota_tab.grid_columnconfigure(0, weight=0, minsize=70)
+sota_tab.grid_columnconfigure(1, weight=1)
+
+tk.Label(sota_tab, text="Ref no.:", font=('Arial', 10), width=12).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+sota_entry = tk.Entry(sota_tab, textvariable=sota_var, font=('Arial', 14, 'bold'), width=12)
+sota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+sota_entry.bind("<FocusIn>", set_focus_color)
+
+# WLOTA tab
+wlota_tab = tk.Frame(notebook)
+notebook.add(wlota_tab, text="WLOTA")
+
+wlota_tab.grid_columnconfigure(0, weight=0, minsize=70)
+wlota_tab.grid_columnconfigure(1, weight=1)
+wlota_tab.grid_columnconfigure(2, weight=0)
+
+tk.Label(wlota_tab, text="Ref no.:", font=('Arial', 10), width=12).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+wlota_entry = tk.Entry(wlota_tab, textvariable=wlota_var, font=('Arial', 14, 'bold'), width=12)
+wlota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+wlota_entry.bind("<FocusIn>", set_focus_color)
+
+
+# WWFF tab
+wwff_tab = tk.Frame(notebook)
+notebook.add(wwff_tab, text="WWFF")
+
+wwff_tab.grid_columnconfigure(0, weight=0, minsize=70)
+wwff_tab.grid_columnconfigure(1, weight=1)
+wwff_tab.grid_columnconfigure(2, weight=0)
+
+tk.Label(wwff_tab, text="Ref no.:", font=('Arial', 10), width=12).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+wwff_entry = tk.Entry(wwff_tab, textvariable=wwff_var, font=('Arial', 14, 'bold'), width=12)
+wwff_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+wwff_entry.bind("<FocusIn>", set_focus_color)
+wwff_entry.bind(
+    "<FocusOut>",
+    lambda e: auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, wwff_lat_var, wwff_long_var, qso_callsign_var)
+)
+
+wwff_map_button = tk.Button(wwff_tab, text="Show Park on Map", 
+                            command=lambda: open_osm_map(    wwff_lat_var, wwff_long_var, station_locator_var, station_callsign_var, wwff_var.get(), wwff_park_name_var.get()))
+wwff_map_button.grid(row=0, column=2, rowspan=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
+
+tk.Label(wwff_tab, text="Park Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
+tk.Label(wwff_tab, textvariable=wwff_park_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=5, sticky='w')
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5619,28 +6296,28 @@ heading_label = tk.Label(heading_frame, text="----", font=('Arial', 16, 'bold'),
 heading_label.grid(row=0, column=0, sticky='nsew')
 
 tk.Label(qrz_tab, text="Address:", font=('Arial', 10)).grid(row=0, column=0, sticky='e', padx=5, pady=Internal_Y_Padding)
-address_entry = tk.Entry(qrz_tab, textvariable=address_var, font=('Arial', 10, 'bold'), width=30)
+address_entry = tk.Entry(qrz_tab, textvariable=qrz_address_var, font=('Arial', 10, 'bold'), width=30)
 address_entry.grid(row=0, column=1, columnspan=2, padx=5, pady=Internal_Y_Padding, sticky='w')
 address_entry.bind("<FocusIn>", set_focus_color)
 address_entry.bind("<FocusOut>", reset_focus_color)
 address_entry.configure(takefocus=False)
 
 tk.Label(qrz_tab, text="City:", font=('Arial', 10)).grid(row=1, column=0, sticky='e', padx=5, pady=Internal_Y_Padding)
-city_entry = tk.Entry(qrz_tab, textvariable=city_var, font=('Arial', 10, 'bold'), width=30)
+city_entry = tk.Entry(qrz_tab, textvariable=qrz_city_var, font=('Arial', 10, 'bold'), width=30)
 city_entry.grid(row=1, column=1, columnspan=2, sticky='w', padx=5, pady=Internal_Y_Padding)
 city_entry.bind("<FocusIn>", set_focus_color)
 city_entry.bind("<FocusOut>", reset_focus_color)
 city_entry.configure(takefocus=False)
 
 tk.Label(qrz_tab, text="Zipcode:", font=('Arial', 10)).grid(row=0, column=3, sticky='e', padx=5, pady=Internal_Y_Padding)
-zipcode_entry = tk.Entry(qrz_tab, textvariable=zipcode_var, font=('Arial', 10, 'bold'), width=15)
+zipcode_entry = tk.Entry(qrz_tab, textvariable=qrz_zipcode_var, font=('Arial', 10, 'bold'), width=15)
 zipcode_entry.grid(row=0, column=4, sticky='w', padx=5, pady=Internal_Y_Padding)
 zipcode_entry.bind("<FocusIn>", set_focus_color)
 zipcode_entry.bind("<FocusOut>", reset_focus_color)
 zipcode_entry.configure(takefocus=False)
 
 tk.Label(qrz_tab, text="QSL Info:", font=('Arial', 10)).grid(row=1, column=3, sticky='e', padx=5, pady=Internal_Y_Padding)
-qsl_info_entry = tk.Entry(qrz_tab, textvariable=qsl_info_var, font=('Arial', 10, 'bold'), width=35)
+qsl_info_entry = tk.Entry(qrz_tab, textvariable=qrz_qsl_info_var, font=('Arial', 10, 'bold'), width=35)
 qsl_info_entry.grid(row=1, column=4, columnspan=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 qsl_info_entry.bind("<FocusIn>", set_focus_color)
 qsl_info_entry.bind("<FocusOut>", reset_focus_color)
