@@ -7,124 +7,132 @@
 # Website       :   https://wwww.pd5dj.nl
 #
 # Version history
-#   18-10-2024  :   1.0.0   - Initial basics running
-#   20-10-2024  :   1.0.7   - Added DXCC lookup
-#   20-10-2024  :   1.0.8   - If DXCC lookup file is missing, added download option
-#   21-10-2024  :   1.0.9   - Basic Log viewer added
-#   22-10-2024  :   1.1.0   - Search function added
-#   22-10-2024  :   1.1.1   - Sorting function added
-#   24-10-2024  :   1.1.2   - Scrollbar fixed in log viewer, layout changed, row color change fixed after search
-#   25-10-2024  :   1.1.3   - Country column added
-#   31-10-2024  :   1.1.4   - ADIF logbook process is changed in JSON
-#                           - ADIF Export function added
-#   01-11-2024  :   1.1.5   - Sorting fixed in logbook viewer
-#                           - Locator field added to main window
-#   02-11-2024  :   1.1.6   - Add flag images that matches with DXCC Entity
-#                   1.1.7   - Added QSO delete option in Edit window
-#                           - Improved prefix filtering
-#   03-11-2024  :   1.1.8   - Yet another prefix filter improvement
-#                   1.1.9   - Cosmetic improvements in main window
-#                           - Major improvement prefix filter, source for dcxx.json is change to my own repo on github
-#   06-11-2024  :   1.1.9a  - New Logbook structure
-#                           - Configuration preferences: Station Callsign and Locator are now moved into new logbook structure
-#                           - Detection/Conversion of older logbooks implemented
-#   07-11-2024  :   1.1.9b  - Edit select & Delete functions changed to right-mouseclick in log viewer
-#                           - Time Tracking checkbox add to menu, handy if you want to add QSO's afterwards
-#   09-11-2024  :   1.1.9c  - Several bugs fixed:
-#                           - If no call matched with dxcc.json then it logged the previous dxcc. Now loggin "[None]" when not found
-#                           - Comboboxes, Band and Mode are now prohibited to edit manually
-#                           - If you now go through all the entry fields with TAB and arrive at frequency, the cursor will be directly at the end so that it can be changed immediately
-#                           - After logging, immediately move the cursor to the callsign entry
-#                           - If you enter a frequency that does not match the band, adjust the band automatically and Visa Versa
-#  10-11-2024   :   1.2.1   - ADIF Import added
-#                           - File encoding fixed when reading ADIF files, now checking UTF-8 and LATIN-1
-#                           - Comboboxes added in Edit QSO window
-#                           - valid locator check added in Edit QSO window
-#                           - Delete QSO button added in Edit QSO window
-#  13-11-2024   :   1.2.2   - Row colors fixed when Searching/Sorting
-#                           - When loading new logbook, treeview is now closed before loading. Not showing old loaded content
-#  14-11-2024   :   1.2.3   - First implementation of Hamlib RigCtlD with frequency and mode readout
-#                           - Error handling RigCTLD added
-#                           - Locator check in Edit QSO fixed
-#                           - Free port detection added, for multiple deamon instances on network
-#  20-11-2024   :   1.2.3c  - Threading added for rigctld deamon
-#                   1.2.3d  - Thread added for update frequency_mode
-#                   1.2.4   - First implementation of WSJT-X ADIF UDP support
-#  23-11-2024   :   1.2.4a  - Added posibility to connect to external rigctld server
-#  24-11-2024   :   1.2.5   - Fix, When changing UDP port, it is was not updated until restart program
-#                           - Confirmation on quitting program
-#                           - Window position save / load added for Main and Logbook window
-#  25-11-2024   :   1.2.6   - Parameters are now stored in user appdata folder
-#                           - Export ADIF back to user select where to save method
-#                           - Name entry added
-#  01-12-2024   :   1.2.7   - More robust Config.ini handler added
-#                           - Added load last logbook function upon start of MiniBook
-#  19-04-2025   :   1.2.9   - Multiselect added in logbook for record deletion
-#  21-04-2025   :           - Added Worked Before Frame at bottom of main window
-#  27-04-2025   :   1.3.0   - MAJOR CHANGE:
-#                           - Due many issues with integrating a Hamlib server, I have decided to remove all server related parts from MiniBook.
-#                           - Minibook can now only connect to an external Hamlib service.
-#                           - Example Batch files are added how to start a service in the background.
-#                           - Fixed RST format 59/599 on mode change
-#                           - Fixed manual RST edit in edit window
-#                           - Fixed Date / Time entry, if incorrect format was entered logbook could not be loaded correctly anymore.
-#                           - Added Satellite Entry field, names are stored in satellites.txt and can be updated with getsatnames.py
-#                             Satellite fields are now imported from ADIF, and Exported to ADIF
-#  01-05-2025   :   1.3.1   - QRZ Lookup added, credentials entered in preference menu.
-#                           - Layout change to support QRZ Lookup, Button added for Lookup
-#                             QRZ Lookup ofcourse only works with a valid QRZ Lookup subscription
-#                             QRZ Lookup only works with internet connection.
-#                           - Added better Callsign filtering for QRZ lookup
-#  03-05-2025               - Now when pressing TAB in callsign entry a QRZ Lookup will be performed automaticly.
-#  05-05-2025   :   1.3.2   - Fix in ADIF export Submode.
-#                           - Export to ADIF is 3 formats, POTA, WWFF and Normal
-#                           - QSO Edit window re-arranged
-#                           - Openarator field added in My Station Setup
-#                           - POTA and WWFF entries added in logbook window
-#                           - Hamlib status and loaded logbook now moven to title bar
-# 09-05-2025    :   1.3.3   - QRZ API Upload added
-#                           - ADIF Import Progressbar added
-#                           - Frequency Input control added, type frequency in KHZ
-#                           - Added "Dupe check of today", callsign will show red on orange when already worked that day.
-#                           - Fix in logbook load function, Clearing old logbook upon cancelation of loading logbook
-# 13-05-2025    :   1.3.4   - Export Selected records to ADIF added in Logbook Window
-#                           - Added frequency offset control, user now can shift frequecy up and down in khz with - or +, ie +15 is 15khz up
-#                           - log backup function added, when opening logbooks a copy is stored in backup-logs folder with timestamp
-#                           - Fix QRZ upload record, Operator field was missing
-# 17-05-2025    :   1.3.5   - Added, DX Summit DX Cluster window.
-#                           - Click on spot, will send frequency and mode to logbook and sent to Hamlib
-# 21-05-2025    :   1.3.6   - Bulkedit added when selecting multiple records.
-#                           - Duplicate QSO finder added
-# 29-05-2025    :   1.3.7   - Password(s) & API Keys have show buttons
-#                           - dxcc.json is replaced by cty.dat, unfortunally cty.dat does not provide dxcc entity numbers, so Flag image had to be removed.
-#                           - Worked before expanded with more matching colors
-# 01-06-2025    :   1.3.8   - QSO's are now processed fully in cache, minimized disk writing time.. worked b4 lookup speed up.
-# 02-06-2025    :   1.3.9   - Locator lookup added. When locator is entered heading and distance always calculated from these entries.
-#                           - Fix Importing ADIF Duplicate records, when selecting ignore.. no files where added at all
-#                           - Fix in QRZ Lookup when entering multiple / call was not found.. i.e. DK/PD5DJ/P was not found.
-# 15-06-2025    :   1.4.0   - QRZ Lookup Fix, better filtering with dashes in callsigns.
-#                             When no match, it will try to retrieve first and last name using base callsign.
-#                             For example: if VK/PD5DJ is not found, it will use names from PD5DJ only.
-#                           - Also when callsign retrieves no qrz data, fields are wiped also.
-#                           - Heading and Distance calculation improved
-# 05-07-2025    :   1.4.2   - ADIF import is now be processed threaded
-# 03-08-2025    :   1.4.3   - Edit QSO, time validation was HH:MM now HH:MM:SS
-# 09-08-2025    :           - Added WWFF/POTA/BOTA Prefix retreive function
-#                           - Added lookup for Park/Bunker names
-# 10-08-2025    :           - Changed filepath structure
-# 11-08-2025    :   1.4.4   - Added mapping option to view references on map
-# 17-08-2025    :   1.4.5   - Major Update!
-#                           - Added IOTA/SOTA/WLOTA
-#                           - Added Owner information for contest ADIF Export
-#                           - Simple Serial contest logging added
-#                           - Added menu Radio, Frequency & Mode Polling moved.
-#                           - Duplicate finder upgraded.
+#   18-10-2024  :   1.0.0   -   Initial basics running
+#   20-10-2024  :   1.0.7   -   Added DXCC lookup
+#   20-10-2024  :   1.0.8   -   If DXCC lookup file is missing, added download option
+#   21-10-2024  :   1.0.9   -   Basic Log viewer added
+#   22-10-2024  :   1.1.0   -   Search function added
+#   22-10-2024  :   1.1.1   -   Sorting function added
+#   24-10-2024  :   1.1.2   -   Scrollbar fixed in log viewer, layout changed, row color change fixed after search
+#   25-10-2024  :   1.1.3   -   Country column added
+#   31-10-2024  :   1.1.4   -   ADIF logbook process is changed in JSON
+#                           -   ADIF Export function added
+#   01-11-2024  :   1.1.5   -   Sorting fixed in logbook viewer
+#                           -   Locator field added to main window
+#   02-11-2024  :   1.1.6   -   Add flag images that matches with DXCC Entity
+#                   1.1.7   -   Added QSO delete option in Edit window
+#                           -   Improved prefix filtering
+#   03-11-2024  :   1.1.8   -   Yet another prefix filter improvement
+#                   1.1.9   -   Cosmetic improvements in main window
+#                           -   Major improvement prefix filter, source for dcxx.json is change to my own repo on github
+#   06-11-2024  :   1.1.9a  -   New Logbook structure
+#                           -   Configuration preferences: Station Callsign and Locator are now moved into new logbook structure
+#                           -   Detection/Conversion of older logbooks implemented
+#   07-11-2024  :   1.1.9b  -   Edit select & Delete functions changed to right-mouseclick in log viewer
+#                           -   Time Tracking checkbox add to menu, handy if you want to add QSO's afterwards
+#   09-11-2024  :   1.1.9c  -   Several bugs fixed:
+#                           -   If no call matched with dxcc.json then it logged the previous dxcc. Now loggin "[None]" when not found
+#                           -   Comboboxes, Band and Mode are now prohibited to edit manually
+#                           -   If you now go through all the entry fields with TAB and arrive at frequency, the cursor will be directly at the end so that it can be changed immediately
+#                           -   After logging, immediately move the cursor to the callsign entry
+#                           -   If you enter a frequency that does not match the band, adjust the band automatically and Visa Versa
+#  10-11-2024   :   1.2.1   -   ADIF Import added
+#                           -   File encoding fixed when reading ADIF files, now checking UTF-8 and LATIN-1
+#                           -   Comboboxes added in Edit QSO window
+#                           -   valid locator check added in Edit QSO window
+#                           -   Delete QSO button added in Edit QSO window
+#  13-11-2024   :   1.2.2   -   Row colors fixed when Searching/Sorting
+#                           -   When loading new logbook, treeview is now closed before loading. Not showing old loaded content
+#  14-11-2024   :   1.2.3   -   First implementation of Hamlib RigCtlD with frequency and mode readout
+#                           -   Error handling RigCTLD added
+#                           -   Locator check in Edit QSO fixed
+#                           -   Free port detection added, for multiple deamon instances on network
+#  20-11-2024   :   1.2.3c  -   Threading added for rigctld deamon
+#                   1.2.3d  -   Thread added for update frequency_mode
+#                   1.2.4   -   First implementation of WSJT-X ADIF UDP support
+#  23-11-2024   :   1.2.4a  -   Added posibility to connect to external rigctld server
+#  24-11-2024   :   1.2.5   -   Fix, When changing UDP port, it is was not updated until restart program
+#                           -   Confirmation on quitting program
+#                           -   Window position save / load added for Main and Logbook window
+#  25-11-2024   :   1.2.6   -   Parameters are now stored in user appdata folder
+#                           -   Export ADIF back to user select where to save method
+#                           -   Name entry added
+#  01-12-2024   :   1.2.7   -   More robust Config.ini handler added
+#                           -   Added load last logbook function upon start of MiniBook
+#  19-04-2025   :   1.2.9   -   Multiselect added in logbook for record deletion
+#  21-04-2025   :           -   Added Worked Before Frame at bottom of main window
+#  27-04-2025   :   1.3.0   -   MAJOR CHANGE:
+#                           -   Due many issues with integrating a Hamlib server, I have decided to remove all server related parts from MiniBook.
+#                           -   Minibook can now only connect to an external Hamlib service.
+#                           -   Example Batch files are added how to start a service in the background.
+#                           -   Fixed RST format 59/599 on mode change
+#                           -   Fixed manual RST edit in edit window
+#                           -   Fixed Date / Time entry, if incorrect format was entered logbook could not be loaded correctly anymore.
+#                           -   Added Satellite Entry field, names are stored in satellites.txt and can be updated with getsatnames.py
+#                               Satellite fields are now imported from ADIF, and Exported to ADIF
+#  01-05-2025   :   1.3.1   -   QRZ Lookup added, credentials entered in preference menu.
+#                           -   Layout change to support QRZ Lookup, Button added for Lookup
+#                               QRZ Lookup ofcourse only works with a valid QRZ Lookup subscription
+#                               QRZ Lookup only works with internet connection.
+#                           -   Added better Callsign filtering for QRZ lookup
+#  03-05-2025               -   Now when pressing TAB in callsign entry a QRZ Lookup will be performed automaticly.
+#  05-05-2025   :   1.3.2   -   Fix in ADIF export Submode.
+#                           -   Export to ADIF is 3 formats, POTA, WWFF and Normal
+#                           -   QSO Edit window re-arranged
+#                           -   Openarator field added in My Station Setup
+#                           -   POTA and WWFF entries added in logbook window
+#                           -   Hamlib status and loaded logbook now moven to title bar
+# 09-05-2025    :   1.3.3   -   QRZ API Upload added
+#                           -   ADIF Import Progressbar added
+#                           -   Frequency Input control added, type frequency in KHZ
+#                           -   Added "Dupe check of today", callsign will show red on orange when already worked that day.
+#                           -   Fix in logbook load function, Clearing old logbook upon cancelation of loading logbook
+# 13-05-2025    :   1.3.4   -   Export Selected records to ADIF added in Logbook Window
+#                           -   Added frequency offset control, user now can shift frequecy up and down in khz with - or +, ie +15 is 15khz up
+#                           -   log backup function added, when opening logbooks a copy is stored in backup-logs folder with timestamp
+#                           -   Fix QRZ upload record, Operator field was missing
+# 17-05-2025    :   1.3.5   -   Added, DX Summit DX Cluster window.
+#                           -   Click on spot, will send frequency and mode to logbook and sent to Hamlib
+# 21-05-2025    :   1.3.6   -   Bulkedit added when selecting multiple records.
+#                           -   Duplicate QSO finder added
+# 29-05-2025    :   1.3.7   -   Password(s) & API Keys have show buttons
+#                           -   dxcc.json is replaced by cty.dat, unfortunally cty.dat does not provide dxcc entity numbers, so Flag image had to be removed.
+#                           -   Worked before expanded with more matching colors
+# 01-06-2025    :   1.3.8   -   QSO's are now processed fully in cache, minimized disk writing time.. worked b4 lookup speed up.
+# 02-06-2025    :   1.3.9   -   Locator lookup added. When locator is entered heading and distance always calculated from these entries.
+#                           -   Fix Importing ADIF Duplicate records, when selecting ignore.. no files where added at all
+#                           -   Fix in QRZ Lookup when entering multiple / call was not found.. i.e. DK/PD5DJ/P was not found.
+# 15-06-2025    :   1.4.0   -   QRZ Lookup Fix, better filtering with dashes in callsigns.
+#                               When no match, it will try to retrieve first and last name using base callsign.
+#                               For example: if VK/PD5DJ is not found, it will use names from PD5DJ only.
+#                           -   Also when callsign retrieves no qrz data, fields are wiped also.
+#                           -   Heading and Distance calculation improved
+# 05-07-2025    :   1.4.2   -   ADIF import is now be processed threaded
+# 03-08-2025    :   1.4.3   -   Edit QSO, time validation was HH:MM now HH:MM:SS
+# 09-08-2025    :           -   Added WWFF/POTA/BOTA Prefix retreive function
+#                           -   Added lookup for Park/Bunker names
+# 10-08-2025    :           -   Changed filepath structure
+# 11-08-2025    :   1.4.4   -   Added mapping option to view references on map
+# 17-08-2025    :   1.4.5   -   Major Update!
+#                           -   Added IOTA/SOTA/WLOTA Entry fields
+#                           -   Added Owner information for contest ADIF Export
+#                           -   Simple Serial contest logging added
+#                           -   Added menu Radio, Frequency & Mode Polling moved.
+#                           -   Duplicate finder upgraded.
+# 25-08-2025    :   1.4.6   -   SOTA reference lookup added
+#                           -   Serial / Receive exchange some fixes
+# 27-08-2025    :               RST Pulldown changed for button window
+# 29-08-2025    :   1.4.7   -   Cosmetics, Station info and Activation info now notebook style.
+#                           -   When callsign entered, and TAB, callsign + freq is sent to DXCluster app if opened.
+# 31-08-2025    :   1.4.8   -   Fix in update_frequency_and_mode_thread() where enter cleared callsign
+#                           -   Backup folder now default .\backup user can alsways change it.
 #**********************************************************************************************************************************
 
 from datetime import datetime, timedelta, date
 from pathlib import Path
 from tkcalendar import DateEntry
 from tkinter import filedialog, messagebox, ttk
+import tkinter.font as tkFont
 import configparser
 import csv
 import html
@@ -154,21 +162,26 @@ import traceback
 # ------- Set True if you want to print system wide debug information -------
 DEBUG               = False
 
-VERSION_NUMBER = ("v1.4.5")
+VERSION_NUMBER = ("v1.4.8")
 
 # Configuration file path
 SETTINGS_FOLDER     = Path.cwd() / "settings"
 DATA_FOLDER         = Path.cwd() / "data"
+BACKUP_FOLDER       = Path.cwd() / "backup"
 
 CONFIG_FILE         = SETTINGS_FOLDER / "minibook.ini"
 
 DXCC_FILE           = DATA_FOLDER / "cty.dat"
-ctydat_url            = "https://www.country-files.com/bigcty/cty.dat"
+ctydat_url          = "https://www.country-files.com/bigcty/cty.dat"
 dxcc_data = []
 
 WWFF_FILE           = DATA_FOLDER / "wwff_directory.csv"
 wwff_references = {}
 wwffref_url = "https://wwff.co/wwff-data/wwff_directory.csv"
+
+COTA_FILE            = DATA_FOLDER / "WCA_list.csv"
+cota_references = {}
+cota_url = "https://wcagroup.org/FORMS/WCA_list.csv"
 
 POTA_FILE           = DATA_FOLDER / "all_parks.csv"
 POTA_MAP_FILE       = DATA_FOLDER / "dxcc_to_pota_map.json"
@@ -186,6 +199,10 @@ IOTA_FILE = DATA_FOLDER / "fulllist.json"
 iota_url  = "https://www.iota-world.org/islands-on-the-air/downloads/download-file.html?path=fulllist.json"
 iota_references = {}
 
+SOTA_FILE = DATA_FOLDER / "summitslist.csv"
+sota_url = "https://storage.sota.org.uk/summitslist.csv"
+sota_references = {}
+
 
 # Global variables
 tree                = None  # Logviewer Tree
@@ -198,7 +215,20 @@ workedb4_window     = None
 dxcc_window         = None
 workedb4_tree       = None
 workedb4_frame      = None
-dxspotviewer_window = None
+dxspotviewer_window = None  # DXCluster.py app
+selector_window     = None  # RST Window
+
+
+
+
+
+#########################################################################################
+#    _   ___ ___    ___   _____ 
+#   /_\ | _ \ _ \  /_\ \ / / __|
+#  / _ \|   /   / / _ \ V /\__ \
+# /_/ \_\_|_\_|_\/_/ \_\_| |___/
+#
+#########################################################################################                               
 
 # -------- Operating mode options --------
 mode_options        = ["AM", "FM", "USB", "LSB", "SSB", "CW", "CW-R", "DIG", "RTTY", "MFSK", "DYNAMIC", "JT65", "JT8", "FT8", "PSK31", "PSK64", "PSK125", "QPSK31", "PKT","OLIVIA", "SSTV", "VARA","DOMINO"]
@@ -211,11 +241,53 @@ rst_options         = [str(i) for i in range(51, 60)] + ["59+10dB", "59+20dB", "
 
 
 
+# Frequency ranges and default frequencies for each band
+band_ranges = {
+    "2200m": (0.1357, 0.1358),
+    "160m": (1.8, 2.0),
+    "80m": (3.5, 4.0),
+    "60m": (5.3515, 5.3665),
+    "40m": (7.0, 7.3),
+    "30m": (10.1, 10.15),
+    "20m": (14.0, 14.35),
+    "17m": (18.068, 18.168),
+    "15m": (21.0, 21.45),
+    "12m": (24.89, 24.99),
+    "11m": (26.0, 28.0),
+    "10m": (28.0, 29.97),
+    "6m": (50.0, 54.0),
+    "4m": (70.0, 70.5),
+    "2m": (144.0, 148.0),
+    "1.25m": (220.0, 225.0),
+    "70cm": (420.0, 450.0),
+    "33cm": (902.0, 928.0),
+    "23cm": (1200.0, 1300.0),
+    "13cm": (2300.0, 2450.0),
+}
 
-
-
-
-
+# Mapping from band to default frequency
+band_to_frequency = {
+    "2200m": "0.1356",
+    "160m": "1.8500",
+    "80m": "3.6500",
+    "60m": "5.3600",
+    "40m": "7.0000",
+    "30m": "10.1000",
+    "20m": "14.0000",
+    "17m": "18.1000",
+    "15m": "21.0000",
+    "12m": "24.8900",
+    "11m": "27.0000",
+    "10m": "28.0000",
+    "6m": "50.0000",
+    "4m": "70.0000",
+    "2m": "144.0000",
+	"1.25m": "220.0000",
+    "70cm": "430.0000",
+	"33cm": "902.0000",
+    "23cm": "1296.0000",
+    "13cm": "2300.0000"
+}
 
 
 #########################################################################################
@@ -225,6 +297,69 @@ rst_options         = [str(i) for i in range(51, 60)] + ["59+10dB", "59+20dB", "
 # |_|  \___/|_|\_|\___| |_| |___\___/|_|\_|___/
 #                                              
 #########################################################################################
+
+# RST Selector Window
+def open_selector(parent, target_var, options, title="Select Value", btn_width=10, btn_height=3, columns=4):
+
+    global selector_window
+
+    # Als er al een venster bestaat → breng naar voren
+    if selector_window is not None and selector_window.winfo_exists():
+        selector_window.lift()
+        selector_window.focus_force()
+        return
+
+    selector_window = tk.Toplevel(parent)
+    selector_window.title(title)
+    selector_window.resizable(False, False)
+
+    # Bold font
+    bold_font = tkFont.Font(weight="bold")
+
+    # Functie om waarde te kiezen
+    def select_value(v):
+        global selector_window
+        target_var.set(v)
+        if selector_window is not None:
+            selector_window.destroy()
+            selector_window = None
+
+    # Knoppen grid
+    for i, val in enumerate(options):
+        btn = tk.Button(
+            selector_window,
+            text=val,
+            width=btn_width,
+            height=btn_height,
+            font=bold_font,
+            bg="#00FF80",     # achtergrondkleur
+            fg="#000000",     # tekstkleur
+            activebackground="#00AA80",  # bij klikken
+            activeforeground="#000000",      # tekstkleur bij klikken
+            command=lambda v=val: select_value(v)
+        )
+        btn.grid(row=i // columns, column=i % columns, padx=5, pady=5)
+
+    # Automatische venstergrootte
+    selector_window.update_idletasks()
+    win_w = selector_window.winfo_reqwidth()
+    win_h = selector_window.winfo_reqheight()
+
+    # Center op parent
+    x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (win_w // 2)
+    y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (win_h // 2)
+    selector_window.geometry(f"{win_w}x{win_h}+{x}+{y}")
+
+    # Sluitfunctie
+    def on_close():
+        global selector_window
+        if selector_window is not None:
+            selector_window.destroy()
+            selector_window = None
+
+    selector_window.protocol("WM_DELETE_WINDOW", on_close)
+
+
 
 # Set up QRZ upload log file
 logging.basicConfig(
@@ -278,6 +413,19 @@ def open_dxspotviewer():
 
 
 
+def send_callsign_to_dxcluster(event=None):
+    """Wordt aangeroepen wanneer TAB wordt gedrukt in callsign_entry.
+       Stuurt callsign, freq en comment naar DXCluster venster indien open."""
+    global dxspotviewer_window
+    if dxspotviewer_window is not None and dxspotviewer_window.winfo_exists():
+        if hasattr(dxspotviewer_window, "dxcluster_app"):
+            app = dxspotviewer_window.dxcluster_app
+            app.spot_callsign_var.set(qso_callsign_var.get())
+            app.spot_freq_var.set(qso_frequency_var.get())
+            app.spot_comment_var.set(qso_comment_var.get())
+
+
+
 # Function to update Title
 def update_title(root, version, filename=None, status_text=None):
     parts = [f"MiniBook {version}"]
@@ -310,6 +458,7 @@ def no_file_loaded():
     station_callsign_entry.config(textvariable=station_callsign_var)
     station_operator_entry.config(textvariable=station_operator_var)
     station_locator_entry.config(textvariable=station_locator_var)
+    station_location_entry.config(textvariable=station_location_var)
     station_wwff_entry.config(textvariable=station_wwff_var)
     station_pota_entry.config(textvariable=station_pota_var)
     station_bota_entry.config(textvariable=station_bota_var)
@@ -350,6 +499,11 @@ def reset_fields():
     bota_var.set("")
     cota_var.set("")
     qso_receive_exchange_var.set("")
+    sota_name_var.set("")
+    sota_matches['values'] = ()
+    sota_matches.set("")
+
+
 
 
 
@@ -436,7 +590,7 @@ def maidenhead_to_latlon(locator):
 
 # Opens OpenStreetMap and shows pins on map with reference number and name, with a line showing distance in tooltip
 def open_osm_map(lat_var, long_var, station_locator_var, station_callsign_var, ref, name):
-    station_lat, station_lon = maidenhead_to_latlon(station_locator_var.get())
+    station_locator = station_locator_var.get().strip()
     station_callsign = station_callsign_var.get().strip().upper()
 
     lat = lat_var.get().strip()
@@ -446,11 +600,23 @@ def open_osm_map(lat_var, long_var, station_locator_var, station_callsign_var, r
         ref_escaped = html.escape(ref).replace("'", "\\'")
         name_escaped = html.escape(name).replace("'", "\\'")
 
-        html_template = f"""
-        <!DOCTYPE html>
+        station_lat, station_lon = None, None
+        if station_locator:  # alleen omzetten als er iets is ingevuld
+            try:
+                station_lat, station_lon = maidenhead_to_latlon(station_locator)
+            except Exception:
+                station_lat, station_lon = None, None
+
+        # Kies startpositie van de kaart
+        if station_lat and station_lon:
+            map_center = f"[{station_lat}, {station_lon}]"
+        else:
+            map_center = f"[{lat}, {lon}]"
+
+        html_template = f"""<!DOCTYPE html>
         <html>
         <head>
-          <title>BOTA /POTA / WWFF reference Mapping</title>
+          <title>SOTA Reference Map</title>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -473,9 +639,8 @@ def open_osm_map(lat_var, long_var, station_locator_var, station_callsign_var, r
         <body>
           <div id="map"></div>
           <script>
-            var map = L.map('map').setView([{station_lat}, {station_lon}], 10);
+            var map = L.map('map').setView({map_center}, 10);
 
-            // Baselayers
             var osm = L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
               maxZoom: 19,
               attribution: '© OpenStreetMap contributors'
@@ -494,16 +659,6 @@ def open_osm_map(lat_var, long_var, station_locator_var, station_callsign_var, r
 
             var esriHybrid = L.layerGroup([esriSat, esriLabels]);
 
-            // Markers
-            var blueIcon = L.icon({{
-              iconUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png',
-              shadowUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png',
-              iconSize:     [25, 41],
-              iconAnchor:   [12, 41],
-              popupAnchor:  [1, -34],
-              shadowSize:   [41, 41]
-            }});
-
             var redIcon = L.icon({{
               iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
               shadowUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png',
@@ -513,15 +668,27 @@ def open_osm_map(lat_var, long_var, station_locator_var, station_callsign_var, r
               shadowSize:   [41, 41]
             }});
 
-            var marker1 = L.marker([{station_lat}, {station_lon}], {{icon: blueIcon}})
-                .addTo(map)
-                .bindPopup('Your Location:<br><b>{station_callsign}</b>')
-                .openPopup();
-
             var marker2 = L.marker([{lat}, {lon}], {{icon: redIcon}})
                 .addTo(map)
                 .bindPopup('<b>{ref_escaped}</b><br>{name_escaped}')
                 .openPopup();
+        """
+
+        # Alleen station tonen als locator geldig is
+        if station_lat and station_lon:
+            html_template += f"""
+            var blueIcon = L.icon({{
+              iconUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png',
+              shadowUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png',
+              iconSize:     [25, 41],
+              iconAnchor:   [12, 41],
+              popupAnchor:  [1, -34],
+              shadowSize:   [41, 41]
+            }});
+
+            var marker1 = L.marker([{station_lat}, {station_lon}], {{icon: blueIcon}})
+                .addTo(map)
+                .bindPopup('Your Location:<br><b>{station_callsign}</b>');
 
             var latlngs = [
                 [{station_lat}, {station_lon}],
@@ -529,13 +696,17 @@ def open_osm_map(lat_var, long_var, station_locator_var, station_callsign_var, r
             ];
             var polyline = L.polyline(latlngs, {{color: 'green'}}).addTo(map);
 
-            var distance = map.distance(
+            // ---- afstand in km én miles ----
+            var distanceKm = map.distance(
                 L.latLng({station_lat}, {station_lon}),
                 L.latLng({lat}, {lon})
-            ) / 1000;
-            distance = distance.toFixed(1);
+            ) / 1000.0;
+            var distanceMi = distanceKm * 0.621371;
 
-            polyline.bindTooltip(distance + ' km', {{
+            var distanceKmTxt = distanceKm.toFixed(1);
+            var distanceMiTxt = distanceMi.toFixed(1);
+
+            polyline.bindTooltip(distanceKmTxt + ' km / ' + distanceMiTxt + ' mi', {{
                 permanent: true,
                 direction: 'center',
                 className: 'distance-tooltip'
@@ -543,20 +714,22 @@ def open_osm_map(lat_var, long_var, station_locator_var, station_callsign_var, r
 
             var group = new L.featureGroup([marker1, marker2, polyline]);
             map.fitBounds(group.getBounds().pad(0.5));
+            """
 
-            // Layer control
-            var baseMaps = {{
+        html_template += """
+            var baseMaps = {
                 "OpenStreetMap": osm,
                 "Satelliet": esriSat,
                 "Satelliet + Labels": esriHybrid
-            }};
+            };
             L.control.layers(baseMaps).addTo(map);
           </script>
         </body>
         </html>
         """
 
-        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html') as f:
+        # FIX: schrijf bestand altijd als UTF-8
+        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.html', encoding="utf-8") as f:
             f.write(html_template)
             temp_file_path = f.name
 
@@ -571,55 +744,6 @@ def open_osm_map(lat_var, long_var, station_locator_var, station_callsign_var, r
 
 
     
-
-
-# Frequency ranges and default frequencies for each band
-band_ranges = {
-    "2200m": (0.1357, 0.1358),
-    "160m": (1.8, 2.0),
-    "80m": (3.5, 4.0),
-    "60m": (5.3515, 5.3665),
-    "40m": (7.0, 7.3),
-    "30m": (10.1, 10.15),
-    "20m": (14.0, 14.35),
-    "17m": (18.068, 18.168),
-    "15m": (21.0, 21.45),
-    "12m": (24.89, 24.99),
-    "11m": (26.0, 28.0),
-    "10m": (28.0, 29.97),
-    "6m": (50.0, 54.0),
-    "4m": (70.0, 70.5),
-    "2m": (144.0, 148.0),
-    "1.25m": (220.0, 225.0),
-    "70cm": (420.0, 450.0),
-    "33cm": (902.0, 928.0),
-    "23cm": (1200.0, 1300.0),
-    "13cm": (2300.0, 2450.0),
-}
-
-# Mapping from band to default frequency
-band_to_frequency = {
-    "2200m": "0.1356",
-    "160m": "1.8500",
-    "80m": "3.6500",
-    "60m": "5.3600",
-    "40m": "7.0000",
-    "30m": "10.1000",
-    "20m": "14.0000",
-    "17m": "18.1000",
-    "15m": "21.0000",
-    "12m": "24.8900",
-    "11m": "27.0000",
-    "10m": "28.0000",
-    "6m": "50.0000",
-    "4m": "70.0000",
-    "2m": "144.0000",
-	"1.25m": "220.0000",
-    "70cm": "430.0000",
-	"33cm": "902.0000",
-    "23cm": "1296.0000",
-    "13cm": "2300.0000"
-}
 
 
 
@@ -711,13 +835,9 @@ def gui_state_control(status):
     
     
 def open_backup_folder():
-    backup_dir = config.get("General", "backup_folder", fallback="").strip()
-    if not backup_dir or not os.path.exists(backup_dir):
-        messagebox.showwarning("Backup Folder Not Set", "No valid backup folder is set in Preferences.")
-        return
+    backup_dir = config.get("General", "backup_folder", fallback=str(Path.cwd() / "backup"))
 
     try:
-        # Cross-platform folder open
         if sys.platform == "win32":
             os.startfile(backup_dir)
         elif sys.platform == "darwin":
@@ -726,6 +846,7 @@ def open_backup_folder():
             subprocess.Popen(["xdg-open", backup_dir])
     except Exception as e:
         messagebox.showerror("Error", f"Could not open the backup folder:\n{e}")
+
 
 
 def calculate_headings(lat1, lon1, lat2, lon2):
@@ -762,7 +883,10 @@ def create_new_json():
     global current_json_file, Logbook_Window, logbook_window_open, qso_lines, duplicate_index_map, tree_to_log_index
 
     if current_json_file:
-        response = messagebox.askquestion("Confirmation", "This will close the currently loaded logbook\n\nAre you sure?")
+        response = messagebox.askquestion(
+            "Confirmation",
+            "This will close the currently loaded logbook\n\nAre you sure?"
+        )
         if response == 'no':
             return
 
@@ -777,19 +901,30 @@ def create_new_json():
         Logbook_Window.destroy()
         Logbook_Window = None
 
+    # --- Zet altijd use_serial uit en reset naar 1 ---
+    try:
+        use_serial_var.set(False)          # Checkbox uit
+        qso_sent_exchange_var.set("1")     # Serial terug naar 1
+        toggle_serial_fields()             # UI meteen updaten
+    except NameError:
+        print("DEBUG: use_serial_var of entries niet gedefinieerd")
+
     # Ask for new file path
-    current_json_file = filedialog.asksaveasfilename(defaultextension=".mbk", filetypes=[("MiniBook files", "*.mbk")])
+    current_json_file = filedialog.asksaveasfilename(
+        defaultextension=".mbk",
+        filetypes=[("MiniBook files", "*.mbk")]
+    )
     if not current_json_file:
         return
 
     # Initialize JSON structure
     data = {
         "Station": {
-            "Callsign": "N0CALL",
-            "Operator": "N0CALL",
-            "Locator": "AB01CD",
+            "Callsign": "",
+            "Operator": "",
+            "Locator": "",
             "Location": "",
-            "Name" : "",
+            "Name": "",
             "Street": "",
             "Postalcode": "",
             "City": "",
@@ -818,7 +953,7 @@ def create_new_json():
     # Update GUI title and load station setup
     update_title(root, VERSION_NUMBER, current_json_file, radio_status_var.get())
     load_station_setup()
-    file_menu.entryconfig("Station setup", state="normal") 
+    file_menu.entryconfig("Station setup", state="normal")
 
 
 
@@ -870,36 +1005,23 @@ def load_json(file_to_load=None):
     workedb4_tree.delete(*workedb4_tree.get_children())
     current_json_file = ""
 
-    # --- If a file is already loaded and no new one was passed in, confirm with user ---
-    if current_json_file and not file_to_load:
-        confirm = messagebox.askyesno(
-            "Confirm",
-            "A file is already loaded. Do you want to load a new file?"
-        )
-        if not confirm:
-            return
-
-        try:
-            use_serial_var.set(False)
-            qso_sent_exchange_var.set("1")
-            toggle_serial_fields()
-        except NameError:
-            print("DEBUG: use_serial_var or entries not defined yet")
+    # --- Zet altijd use_serial uit en reset naar 1 ---
+    try:
+        use_serial_var.set(False)          # Checkbox uit
+        qso_sent_exchange_var.set("1")     # Serial terug naar 1
+        toggle_serial_fields()             # UI updaten
+    except NameError:
+        print("DEBUG: use_serial_var of entries niet gedefinieerd")
 
     # --- Determine file to load ---
     selected_file = file_to_load or filedialog.askopenfilename(filetypes=[("MiniBook files", "*.mbk")])
     if not selected_file:
         return  # User cancelled
 
-    # --- Backup folder check ---
-    backup_dir = config.get("General", "backup_folder", fallback="").strip()
-    if not backup_dir or not os.path.exists(backup_dir):
-        if messagebox.askokcancel(
-            "Backup Folder Not Set",
-            "No valid backup folder is configured.\nWould you like to open Preferences now to set one?"
-        ):
-            root.after(100, open_preferences)
-        return
+    # --- Backup folder ---
+    backup_dir = config.get("General", "backup_folder", fallback=str(Path.cwd() / "backup")).strip()
+    os.makedirs(backup_dir, exist_ok=True)
+
 
     current_json_file = selected_file
 
@@ -966,6 +1088,7 @@ def load_json(file_to_load=None):
         traceback.print_exc()
         messagebox.showerror("Error", f"Could not read the file:\n{str(e)}")
         no_file_loaded()
+
 
 
 
@@ -2054,8 +2177,24 @@ def edit_qso(event):
             entry.set(original_qso.get('Submode', ''))
 
         elif field in ['Sent', 'Received']:
-            entry = ttk.Combobox(form_frame, values=rst_options, font=('Arial', 10), width=14)
-            entry.set(original_qso.get(field, ''))
+            var = tk.StringVar()
+            var.set(original_qso.get(field, ''))
+
+            rst_frame = tk.Frame(form_frame)
+
+            entry = tk.Entry(rst_frame, textvariable=var, font=('Arial', 10), width=12)
+            entry.pack(side="left", padx=(0, 2))
+
+            tk.Button(rst_frame, text="⋯",
+                    command=lambda v=var: open_selector(Edit_Window, v, rst_options, "Select RST")
+            ).pack(side="left")
+
+            # Plaats frame in grid (ipv entry.grid)
+            rst_frame.grid(row=row, column=col * 2 + 1, padx=5, pady=5, sticky='w')
+
+            entries[field] = var  # StringVar bewaren
+
+
             
         else:
             if field in ['WWFF', 'My WWFF', 'POTA', 'My POTA', 'IOTA', 'My IOTA', 'SOTA', 'My SOTA', 'WLOTA', 'My WLOTA', 'BOTA', 'My BOTA', 'COTA', 'My COTA']:
@@ -2067,8 +2206,9 @@ def edit_qso(event):
                 entry = tk.Entry(form_frame)
                 entry.insert(0, original_qso.get(field, ''))
 
-        entry.grid(row=row, column=col * 2 + 1, padx=5, pady=5, sticky='w')
-        entries[field] = entry
+        if field not in ['Sent', 'Received']:
+            entry.grid(row=row, column=col * 2 + 1, padx=5, pady=5, sticky='w')
+            entries[field] = entry
 
     # ─────────────── Buttons onderaan ───────────────
     button_frame = tk.Frame(Edit_Window)
@@ -2114,8 +2254,12 @@ def edit_qso(event):
         for field in fields:
             if field not in original_qso:
                 original_qso[field] = ""
-            if field not in ['Date', 'Time', 'Callsign', 'Locator', 'My Locator', 'My Callsign', 'My Operator', 'Mode', 'Submode', 'Band']:
+
+            if field in ['Sent', 'Received']:
                 original_qso[field] = entries[field].get().strip()
+            elif field not in ['Date', 'Time', 'Callsign', 'Locator', 'My Locator', 'My Callsign', 'My Operator', 'Mode', 'Submode', 'Band']:
+                original_qso[field] = entries[field].get().strip()
+
 
         save_to_json()
         load_json_content()
@@ -2732,7 +2876,7 @@ def log_qso():
         "Satellite": qso_satellite_var.get().strip()
     }
     
-    # Alleen toevoegen als checkbox actief is
+    # Only add if checkbox is active
     if use_serial_var.get():
         qso_entry["Sent Exchange"] = qso_sent_exchange_var.get()
         qso_entry["Receive Exchange"] = qso_receive_exchange_var.get()    
@@ -2778,8 +2922,26 @@ def log_qso():
             current_val = int(qso_sent_exchange_var.get())
             qso_sent_exchange_var.set(str(current_val + 1))
         except ValueError:
-            # If the current value is not a number, reset it to 1
             qso_sent_exchange_var.set("1")
+
+    # -------------------------------
+    # Send to DXCluster
+    # -------------------------------
+    comment_out = qso_entry["Comment"]
+
+    # Add reference numbers to comment field (if present)
+    for refkey in ["WWFF", "POTA", "BOTA", "COTA", "IOTA", "SOTA", "WLOTA"]:
+        if qso_entry.get(refkey):
+            comment_out += f" {refkey}:{qso_entry[refkey]}"
+
+    # Send to DXCluster if open
+    if dxspotviewer_window is not None and dxspotviewer_window.winfo_exists():
+        if hasattr(dxspotviewer_window, "dxcluster_app"):
+            app = dxspotviewer_window.dxcluster_app
+            app.spot_callsign_var.set(qso_entry["Callsign"])
+            app.spot_freq_var.set(qso_entry["Frequency"])
+            app.spot_comment_var.set(comment_out.strip())
+
 
 
 
@@ -2853,12 +3015,12 @@ def upload_to_qrz(qso, showstatus):
                 callsign = qso.get('CALL', '') or qso.get('Callsign', '')
                 msg = f"✅ QSO {callsign} successfully uploaded to QRZ."
 
-                color = "green"
+                color = "red"
             elif "RESULT=FAIL" in response.text:
                 reason = response.text.split("REASON=")[-1].split("&")[0]
                 if "duplicate" in reason.lower():
                     msg = f"⚠️ {reason}"
-                    color = "orange"
+                    color = "red"
                 elif "wrong station_callsign" in reason.lower():
                     msg = f"❌ Wrong station_callsign!"#: {reason}"
                     color = "red"
@@ -2870,7 +3032,7 @@ def upload_to_qrz(qso, showstatus):
                 color = "red"
             else:
                 msg = "⚠️ QRZ returned an unknown response."
-                color = "orange"
+                color = "red"
         else:
             msg = f"❌ HTTP error while uploading to QRZ: {response.status_code}"
             color = "red"
@@ -2884,12 +3046,7 @@ def upload_to_qrz(qso, showstatus):
         print(msg)
 
     if not showstatus:
-        QRZ_status_label.config(
-            text=msg,
-            fg=color,
-            cursor="hand2" if "successfully uploaded" in msg else "",
-            font=('Arial', 8, 'underline') if "successfully uploaded" in msg else ('Arial', 8)
-        )
+        QRZ_status_label.config(text=msg, fg=color, cursor="hand2" if "successfully uploaded" in msg else "", font=('Arial', 8, 'underline') if "successfully uploaded" in msg else ('Arial', 8))
         QRZ_status_label.unbind("<Button-1>")
         if "successfully uploaded" in msg:
             QRZ_status_label.bind("<Button-1>", lambda e, cs=callsign: open_qrz_link(e, cs))
@@ -3098,32 +3255,54 @@ def add_qso_to_logbook(qso_entry):
     global qso_lines
 
     try:
-        # Voeg toe aan cache
+        # Add to cache
         qso_lines.append(qso_entry)
 
-        # Schrijf cache naar disk
+        # Write cache to disk
         save_to_json()
 
         # Update "Worked Before" tree
         update_worked_before_tree()
 
-        # Update de laatste QSO label
+        # Update the last QSO label
         last_qso_label.config(
             text=f"Last QSO with {qso_entry['Callsign']} at {qso_entry['Time']} "
                  f"on {float(qso_entry['Frequency']):.3f}MHz in {qso_entry['Mode']}"
         )
 
-        # Update logbook venster indien open (via main thread)
+        # Update logbook window if open (via main thread)
         for window in root.winfo_children():
             if isinstance(window, tk.Toplevel) and hasattr(window, 'update_logbook'):
                 root.after(0, window.update_logbook)
 
-        # Toon succesbericht
+        # Show success message
         show_auto_close_messagebox(
             "MiniBook",
-            f"Succes!\n\nQSO with {qso_entry['Callsign']} at {qso_entry['Time']}\nsuccessfully added!",
+            f"Success!\n\nQSO with {qso_entry['Callsign']} at {qso_entry['Time']}\nsuccessfully added!",
             duration=3000
         )
+
+        # --------------------------------------
+        # New: send spot to DXCluster
+        # --------------------------------------
+        comment_out = qso_entry.get("Comment", "")
+
+        # Add mode to the comment
+        if qso_entry.get("Mode"):
+            #comment_out += f" Mode: {qso_entry['Mode']}"
+            comment_out += f"{qso_entry['Mode']}"
+        # Add reference numbers to the comment
+        for refkey in ["WWFF", "POTA", "BOTA", "COTA", "IOTA", "SOTA", "WLOTA"]:
+            if qso_entry.get(refkey):
+                comment_out += f" {refkey}:{qso_entry[refkey]}"
+
+        # Send spot if DXCluster window is open
+        if dxspotviewer_window is not None and dxspotviewer_window.winfo_exists():
+            if hasattr(dxspotviewer_window, "dxcluster_app"):
+                app = dxspotviewer_window.dxcluster_app
+                app.spot_callsign_var.set(qso_entry["Callsign"])
+                app.spot_freq_var.set(qso_entry["Frequency"])
+                app.spot_comment_var.set(comment_out.strip())
 
     except Exception as e:
         show_auto_close_messagebox(
@@ -3406,9 +3585,6 @@ def update_frequency_and_mode_thread():
 
 
 
-
-
-
 # Manual Frequency or Mode input handler
 def handle_callsign_or_frequency_entry(event=None):
     value = qso_callsign_var.get().strip().upper()
@@ -3419,9 +3595,11 @@ def handle_callsign_or_frequency_entry(event=None):
         'SAM', 'SAL', 'SAH', 'DSB'
     }
 
-    def refocus():
-        qso_callsign_var.set("")
+    def refocus(clear=True):
+        if clear:
+            qso_callsign_var.set("")   # wissen alleen bij freq/mode input
         callsign_entry.focus_set()
+        return "break"  # heel belangrijk: stopt standaard <Return>-gedrag
 
     def handle_rprt_error_with_popup(code):
         print(f"[Hamlib] Error code: {code}. Please restart HamlibServer.")
@@ -3578,9 +3756,10 @@ def handle_callsign_or_frequency_entry(event=None):
 
         return refocus()
 
-    # --- Invalid input ---
-    print(f"[Input] Ignored: '{value}' is not a valid kHz frequency or supported mode.")
-    return refocus()
+    # --- Anders: callsign ---
+    print(f"[Input] Treating '{value}' as callsign entry (kept).")
+    return refocus(clear=False)
+
 
 
 
@@ -3658,8 +3837,10 @@ def open_station_setup():
     station_iota_name = tk.StringVar()
     station_iota_lat = tk.StringVar()
     station_iota_long = tk.StringVar()
-    station_cota = tk.StringVar()
+    station_cota = tk.StringVar(value=station_cota_var.get())
+    station_cota_name = tk.StringVar()
     station_sota = tk.StringVar(value=station_sota_var.get())
+    station_sota_name = tk.StringVar()
     station_wlota = tk.StringVar(value=station_wlota_var.get())
 
     station_qrzapi = tk.StringVar(value=station_qrzapi_var.get())
@@ -3804,6 +3985,13 @@ def open_station_setup():
     tk.Label(cota_frame, text="Reference No.:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
     cota_entry = tk.Entry(cota_frame, textvariable=station_cota, font=('Arial', 10, 'bold'))
     cota_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
+    cota_entry.bind("<FocusOut>", lambda e: auto_fill_cota_prefix(station_cota, station_cota_name, station_callsign))
+
+    tk.Label(cota_frame, text="Castle name:", font=('Arial', 10)).grid(row=1, column=0, columnspan=2, padx=10, pady=1, sticky='w')
+    tk.Label(cota_frame, textvariable=station_cota_name, font=('Arial', 10, 'bold'), wraplength=360, justify="left").grid(row=1, column=1, columnspan=2, padx=10, pady=1, sticky='w')
+
+
+
 
     # ---------- IOTA tab ----------
     iota_frame = tk.Frame(notebook, background='#f0f0f0')
@@ -3819,15 +4007,37 @@ def open_station_setup():
     tk.Label(iota_frame, text="Island name:", font=('Arial', 10)).grid(row=1, column=0, columnspan=2, padx=10, pady=1, sticky='w')
     tk.Label(iota_frame, textvariable=station_iota_name, font=('Arial', 10, 'bold'), wraplength=360, justify="left").grid(row=1, column=1, columnspan=2, padx=10, pady=1, sticky='w')
 
-    # ---------- SOTA tab ----------
+
+
+
+
+    # ==================================================
+    # SOTA Tab (Station Setup)
+    # ==================================================
     sota_frame = tk.Frame(notebook, background='#f0f0f0')
     notebook.add(sota_frame, text="SOTA")
 
+    sota_frame.grid_columnconfigure(0, weight=0, minsize=70)
     sota_frame.grid_columnconfigure(1, weight=1)
+    sota_frame.grid_columnconfigure(2, weight=1)
 
-    tk.Label(sota_frame, text="Reference No.:", font=('Arial', 10)).grid(row=0, column=0, padx=10, pady=1, sticky='w')
-    sota_entry = tk.Entry(sota_frame, textvariable=station_sota, font=('Arial', 10, 'bold'))
-    sota_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
+    # Ref entry (zoekveld)
+    tk.Label(sota_frame, text="Ref no.:", font=('Arial', 10), width=12).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+    station_sota_entry = tk.Entry(sota_frame, textvariable=station_sota, font=('Arial', 14, 'bold'), width=12)
+
+    station_sota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+    station_sota_entry.bind("<FocusIn>", set_focus_color)
+    station_sota_entry.bind("<FocusOut>", lambda e: auto_fill_sota_prefix(station_sota, station_sota_name, None, None, combobox=station_sota_matches))
+
+    # Dropdown combobox
+    station_sota_matches = ttk.Combobox(sota_frame, state="readonly", font=('Arial', 10), width=20)
+    station_sota_matches.grid(row=0, column=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
+    station_sota_matches.bind("<<ComboboxSelected>>", on_sota_select)
+
+    # Summit label
+    tk.Label(sota_frame, text="Summit name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
+    tk.Label(sota_frame, textvariable=station_sota_name, font=('Arial', 10, 'bold')).grid(row=1, column=1, columnspan=2, sticky='w')
+
 
     # ---------- WLOTA tab ----------
     wlota_frame = tk.Frame(notebook, background='#f0f0f0')
@@ -3844,7 +4054,8 @@ def open_station_setup():
     auto_fill_wwff_prefix(station_wwff, station_wwff_name, station_wwff_lat, station_wwff_long, station_callsign)
     auto_fill_bota_prefix(station_bota, station_bota_name, station_bota_lat, station_bota_long, station_callsign)
     auto_fill_iota_prefix(station_iota, station_iota_name, station_iota_lat, station_iota_long, station_callsign)
-    
+    auto_fill_sota_prefix(station_sota, station_sota_name, None, None, station_sota)
+    auto_fill_cota_prefix(station_cota, station_cota_name, station_callsign)
 
     for frame in (pota_frame, wwff_frame, bota_frame):
         frame.grid_columnconfigure(0, minsize=100)
@@ -4153,18 +4364,18 @@ def load_config():
         config['General'] = {}
         config['hamlib_settings'] = {}
         config['Wsjtx_settings'] = {}
+        config['QRZ'] = {}
 
     # Read the existing file or newly created sections
     config.read(file_path)
 
-    # Ensure all sections and their keys exist
-    # Global_settings
+    # ------------------ Global_settings ------------------
     if 'Global_settings' not in config:
         config.add_section('Global_settings')
     if 'utc_offset' not in config['Global_settings']:
         config['Global_settings']['utc_offset'] = '0'
 
-    # General
+    # ------------------ General ------------------
     if 'General' not in config:
         config.add_section('General')
     if 'reload_last_logbook' not in config['General']:
@@ -4172,7 +4383,13 @@ def load_config():
     if 'last_loaded_logbook' not in config['General']:
         config['General']['last_loaded_logbook'] = ''
 
-    # hamlib_settings
+    # Nieuw: standaard backup folder
+    if 'backup_folder' not in config['General']:
+        default_backup = str(Path.cwd() / "backup")
+        os.makedirs(default_backup, exist_ok=True)
+        config['General']['backup_folder'] = default_backup
+
+    # ------------------ hamlib_settings ------------------
     if 'hamlib_settings' not in config:
         config.add_section('hamlib_settings')
     if 'hamlib_port' not in config['hamlib_settings']:
@@ -4180,13 +4397,13 @@ def load_config():
     if 'hamlib_ip' not in config['hamlib_settings']:
         config['hamlib_settings']['hamlib_ip'] = '127.0.0.1'
 
-
-    # Wsjtx_settings
+    # ------------------ Wsjtx_settings ------------------
     if 'Wsjtx_settings' not in config:
         config.add_section('Wsjtx_settings')
     if 'wsjtx_port' not in config['Wsjtx_settings']:
         config['Wsjtx_settings']['wsjtx_port'] = '2333'
-        
+
+    # ------------------ QRZ ------------------
     if 'QRZ' not in config:
         config.add_section('QRZ')
     if 'username' not in config['QRZ']:
@@ -4196,11 +4413,10 @@ def load_config():
     if 'use_qrz_lookup' not in config['QRZ']:
         config['QRZ']['use_qrz_lookup'] = 'False'
 
-        
-        
-    # Save the updated config if any changes were made
+    # ------------------ Save changes ------------------
     with open(file_path, 'w') as configfile:
         config.write(configfile)
+
 
 
 
@@ -4215,9 +4431,9 @@ def load_station_setup():
                 #Check for Valid fields in "STATION", otherwise set defaults
                 station_info = logbook_data.get("Station", {})
 
-                station_operator_var.set(station_info.get("Operator", "N0CALL"))
-                station_callsign_var.set(station_info.get("Callsign", "N0CALL"))
-                station_locator_var.set(station_info.get("Locator", "AB01CD"))
+                station_operator_var.set(station_info.get("Operator", ""))
+                station_callsign_var.set(station_info.get("Callsign", ""))
+                station_locator_var.set(station_info.get("Locator", ""))
                 station_location_var.set(station_info.get("Location", ""))
                 
                 station_name_var.set(station_info.get("Name", ""))
@@ -4244,6 +4460,7 @@ def load_station_setup():
                 station_callsign_entry.config(textvariable=station_callsign_var)
                 station_operator_entry.config(textvariable=station_operator_var)
                 station_locator_entry.config(textvariable=station_locator_var)
+                station_location_entry.config(textvariable=station_location_var)
                 station_wwff_entry.config(textvariable=station_wwff_var)
                 station_pota_entry.config(textvariable=station_pota_var)
                 station_bota_entry.config(textvariable=station_bota_var)
@@ -4391,11 +4608,7 @@ def query_callsign(session_key, callsign):
             if fallback_element is not None:
                 # Gebruik alleen de naam uit fallback-element
                 full_name = f"{fallback_element.findtext('qrz:fname', '', ns)} {fallback_element.findtext('qrz:name', '', ns)}".strip()
-                QRZ_status_label.config(
-                    text=f"ℹ️ Fallback QRZ lookup: name from {base}",
-                    fg="orange",
-                    font=('Arial', 8, 'italic')
-                )
+                QRZ_status_label.config(text=f"ℹ️ Fallback QRZ lookup: name from {base}", fg="red", font=('Arial', 8, 'italic'))
                 QRZ_status_label.unbind("<Button-1>")
 
                 return {
@@ -4425,12 +4638,7 @@ def query_callsign(session_key, callsign):
 
     found_call = callsign_element.findtext("qrz:call", default="Unknown", namespaces=ns)
 
-    QRZ_status_label.config(
-        text=f"🔍 Found {found_call} in QRZ lookup.",
-        fg="blue",
-        cursor="hand2",
-        font=('Arial', 8, 'underline')
-    )
+    QRZ_status_label.config(text=f"🔍 Found {found_call} in QRZ lookup.", fg="blue", cursor="hand2", font=('Arial', 8, 'underline'))
     QRZ_status_label.unbind("<Button-1>")
     QRZ_status_label.bind("<Button-1>", lambda e, cs=found_call: open_qrz_link(e, cs))
 
@@ -4591,16 +4799,23 @@ def init():
     load_dxcc_to_pota_map()
 
     # 
-    load_pota_references()
+    pota_check()
 
-    # Checks if wwff_directory.csv exists
+    # 
     wwffref_check()
 
     #
     bota_check()
 
     #
-    load_iota_references()
+    iota_check()
+    
+    #
+    sota_check()
+
+    #
+    cota_check()
+
 
     # Creating & loading of config.ini
     load_config()
@@ -4688,6 +4903,302 @@ def exit_program():
 
     else:  # If the user clicked "No"
         return
+        
+
+
+
+#########################################################################################
+#  ___  ___ _____ _     ___ ___ ___ ___ ___ ___ _  _  ___ ___ 
+# / __|/ _ \_   _/_\   | _ \ __| __| __| _ \ __| \| |/ __| __|
+# \__ \ (_) || |/ _ \  |   / _|| _|| _||   / _|| .` | (__| _| 
+# |___/\___/ |_/_/ \_\ |_|_\___|_| |___|_|_\___|_|\_|\___|___|
+#
+#########################################################################################
+
+def download_sota_file():
+    """Download the SOTA reference file (summitslist.csv) from sotadata.org.uk"""
+    try:
+        response = requests.get(sota_url, timeout=20)
+        response.raise_for_status()
+        DATA_FOLDER.mkdir(parents=True, exist_ok=True)
+        with open(SOTA_FILE, "wb") as f:
+            f.write(response.content)
+        messagebox.showinfo("Download", "SOTA Reference file downloaded successfully.")
+        return True
+    except Exception as e:
+        messagebox.showerror("Download Error", f"Error downloading SOTA Reference file:\n{e}")
+        return False
+
+
+def load_sota_file():
+    """Load all SOTA summits into a dictionary: SummitCode -> summit data."""
+    global sota_references
+    sota_references = {}
+
+    try:
+        with open(SOTA_FILE, newline='', encoding="utf-8") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if not row or len(row) < 10 or row[0].strip().upper() == "SUMMITCODE":
+                    continue
+                ref = row[0].strip().upper()
+                country = row[1].strip()
+                region = row[2].strip()
+                name = row[3].strip()
+                height = row[4].strip()
+                points = row[5].strip()
+                lon = row[8].strip()
+                lat = row[9].strip()
+                sota_references[ref] = {
+                    "country": country,
+                    "region": region,
+                    "name": name,
+                    "height": height,
+                    "points": points,
+                    "lon": lon,
+                    "lat": lat
+                }
+        print(f"{len(sota_references)} summits geladen.")
+    except Exception as e:
+        messagebox.showerror("SOTA Error", f"Error loading SOTA references:\n{e}")
+        sota_references = {}
+
+
+def sota_check():
+    """Check if summitslist.csv exists, download if missing, then load into dict."""
+    global sota_references
+    sota_references = {}
+
+    try:
+        if not os.path.exists(SOTA_FILE):
+            messagebox.showinfo("SOTA Reference File Not Found",
+                                f"The file {SOTA_FILE} was not found. It will now be downloaded.")
+            if not download_sota_file():
+                return
+
+        load_sota_file()
+
+    except Exception as e:
+        messagebox.showerror("SOTA Error", f"Unexpected error:\n{e}")
+        sota_references = {}
+
+
+def normalize_ref(ref):
+    parts = re.findall(r'[A-Z]+|\d+', ref.upper())
+    normalized = ''
+    for p in parts:
+        if p.isdigit():
+            normalized += str(int(p))
+        else:
+            normalized += p
+    return normalized
+
+def find_sota_matches(input_text):
+    input_norm = normalize_ref(input_text)
+
+    letters = "".join(re.findall(r"[A-Z]+", input_norm))
+    digits = "".join(re.findall(r"\d+", input_norm))
+
+    exact_match = None
+    possible_matches = []
+
+    for ref, data in sota_references.items():
+        if normalize_ref(ref) == input_norm:
+            exact_match = (ref, data)
+            return exact_match, []
+
+    while letters:
+        possible_matches = [
+            (ref, data)
+            for ref, data in sota_references.items()
+            if normalize_ref(ref).startswith(letters)
+            and re.search(r"-0*{}$".format(digits), ref)
+        ]
+        if possible_matches:
+            break
+        letters = letters[:-1]
+
+    if not possible_matches and digits:
+        possible_matches = [
+            (ref, data)
+            for ref, data in sota_references.items()
+            if re.search(r"-0*{}$".format(digits), ref)
+        ]
+
+    return exact_match, possible_matches
+
+
+def auto_fill_sota_prefix(sota_var, name_var, lat_var=None, lon_var=None, callsign_var=None, combobox=None):
+    user_input = sota_var.get().strip()
+    if not user_input:
+        if combobox:
+            combobox['values'] = []
+            combobox.set('')
+        name_var.set('')
+        if lat_var: lat_var.set('')
+        if lon_var: lon_var.set('')
+        return
+
+    exact, possibles = find_sota_matches(user_input)
+
+    if exact:
+        ref, data = exact
+        sota_var.set(ref)
+        name_var.set(data["name"])
+        if lat_var: lat_var.set(data["lat"])
+        if lon_var: lon_var.set(data["lon"])
+        if combobox:
+            combobox['values'] = []
+            combobox.set('')
+
+    elif possibles:
+        refs = [f"{ref} ({data['name']})" for ref, data in possibles]
+        if combobox:
+            combobox['values'] = refs
+            combobox.current(0)
+
+        ref, data = possibles[0]
+        sota_var.set(ref)
+        name_var.set(data["name"])
+        if lat_var: lat_var.set(data["lat"])
+        if lon_var: lon_var.set(data["lon"])
+
+    else:
+        name_var.set('')
+        if lat_var: lat_var.set('')
+        if lon_var: lon_var.set('')
+        if combobox:
+            combobox['values'] = []
+            combobox.set('')
+
+
+
+
+def on_sota_select(event):
+    """Wordt aangeroepen als een summit in de combobox gekozen wordt."""
+    sel = sota_matches.get().strip()
+    if not sel:
+        return
+
+    ref = sel.split()[0].upper()
+    data = sota_references.get(ref)
+
+    if data:
+        sota_var.set(ref)                   # SummitCode
+        sota_name_var.set(data["name"])     # Summit naam
+        sota_lat_var.set(data["lat"])       # Latitude
+        sota_long_var.set(data["lon"])      # Longitude
+    else:
+        # Fallback → alles leeg
+        sota_var.set("")
+        sota_name_var.set("")
+        sota_lat_var.set("")
+        sota_long_var.set("")
+        
+
+
+#########################################################################################
+#   ___ ___ _____ _     ___ ___ ___ ___ ___ ___ _  _  ___ ___ 
+#  / __/ _ \_   _/_\   | _ \ __| __| __| _ \ __| \| |/ __| __|
+# | (_| (_) || |/ _ \  |   / _|| _|| _||   / _|| .` | (__| _| 
+#  \___\___/ |_/_/ \_\ |_|_\___|_| |___|_|_\___|_|\_|\___|___|
+#                                                            
+#########################################################################################
+
+def cota_check():
+    global cota_references
+    try:
+        if not os.path.exists(COTA_FILE):
+            messagebox.showinfo("COTA Reference File Not Found", "The file WCA_list.csv was not found. It will now be downloaded.")
+            download_cota_file()
+
+        cota_references = {}
+        with open(COTA_FILE, encoding="utf-8", newline='') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                # We expect at least 4 columns (ref + name in col 3)
+                if len(row) >= 4:
+                    ref = row[0].strip().upper()
+                    name = row[3].strip()
+
+                    if ref:  # save only valid lines
+                        cota_references[ref] = {
+                            "name": name
+                        }
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Error loading COTA reference list: {e}")
+
+
+def download_cota_file():
+    try:
+        response = requests.get(cota_url)
+        response.raise_for_status()
+        
+        with open(COTA_FILE, "wb") as f:
+            f.write(response.content)
+        
+        messagebox.showinfo("Download", "The file WCA_list.csv has been downloaded successfully.")
+    except Exception as e:
+        messagebox.showerror("Download Error", f"Failed to download WCA_list.csv: {e}")
+
+
+def auto_fill_cota_prefix(cota_var, cota_name_var, qso_callsign_var):
+    """
+    Auto-fill COTA/COTA reference and castle name based on callsign and numeric part.
+    """
+    raw_val = cota_var.get().strip()
+    call = qso_callsign_var.get().strip().upper()
+
+    # Extract only digits
+    cota_digits = re.sub(r"\D", "", raw_val)
+    cota_digits = cota_digits.lstrip("0")  # prevent leading zero to "0"
+
+    land_prefix = None
+    if cota_digits and call:
+        # Find DXCC prefix by callsign
+        for entry in dxcc_data:
+            match_found = False
+            for p in entry.prefixes[1:]:
+                if call.startswith(p.upper()):
+                    land_prefix = entry.prefixes[0].upper()
+                    match_found = True
+                    break
+            if not match_found and call.startswith(entry.prefixes[0].upper()):
+                land_prefix = entry.prefixes[0].upper()
+                match_found = True
+            if match_found:
+                break
+
+        # Fallback: take the letters at the beginning of the call
+        if not land_prefix:
+            match = re.match(r"^([A-Z]+)", call)
+            if match:
+                land_prefix = match.group(1).upper()
+
+    # Only fill in if country prefix and digits exist
+    if land_prefix and cota_digits:
+        ref_code = f"{land_prefix}-{cota_digits.zfill(5)}"  # COTA refs usually have 5 digits
+        cota_var.set(ref_code)
+
+        castle_info = cota_references.get(ref_code)
+        if castle_info:
+            cota_name_var.set(castle_info.get("name", ""))
+        else:
+            cota_name_var.set("")
+    else:
+        # Clear if invalid input
+        cota_var.set("")
+        cota_name_var.set("")
+
+
+
+
+
+
+
+        
+        
 
 #########################################################################################
 #  ___ ___ _____ _     ___ ___ ___ ___ ___ ___ _  _  ___ ___ 
@@ -4712,7 +5223,7 @@ def download_iota_file():
         return False
 
 
-def load_iota_references():
+def iota_check():
     """Load IOTA reference data from fulllist.json into a dictionary."""
     global iota_references
     iota_references = {}                
@@ -4755,7 +5266,6 @@ def lookup_iota_ref(callsign, iota_number):
     name = iota_references.get(ref)
 
     return ref, name
-
 
 
 
@@ -4815,6 +5325,7 @@ def auto_fill_iota_prefix(iota_var, iota_name_var, iota_lat_var, iota_long_var, 
 
 
 
+
 #########################################################################################
 #  ___  ___ _____ _     ___ ___ ___ ___ ___ ___ _  _  ___ ___ 
 # | _ \/ _ \_   _/_\   | _ \ __| __| __| _ \ __| \| |/ __| __|
@@ -4833,7 +5344,7 @@ def download_pota_file():
     except Exception as e:
         messagebox.showerror("Download Error", f"Failed to download {POTA_FILE}: {e}")
 
-def load_pota_references(pota_file=POTA_FILE):
+def pota_check(pota_file=POTA_FILE):
     global pota_references
     pota_references = {}
 
@@ -4851,6 +5362,9 @@ def load_pota_references(pota_file=POTA_FILE):
         messagebox.showerror("Error", f"Error loading POTA reference list: {e}")
 
 def load_dxcc_to_pota_map(json_file=POTA_MAP_FILE):
+    """
+    Load DXCC to POTA prefix map (prefix ranges → ISO country codes).
+    """
     global dxcc_to_pota_map
     try:
         if not os.path.exists(json_file):
@@ -4861,6 +5375,35 @@ def load_dxcc_to_pota_map(json_file=POTA_MAP_FILE):
     except Exception as e:
         messagebox.showerror("Error", f"Failed to load mapping file: {e}")
 
+def prefix_in_range(call, prefix):
+    """
+    Check if a callsign matches a prefix or prefix range.
+    Example:
+        prefix = "PA-PI", call = "PD5DJ" → True
+        prefix = "ON", call = "ON4UN" → True
+    """
+    call = call.upper()
+    if "-" in prefix:
+        start, end = prefix.split("-")
+        plen = len(start)
+        fragment = call[:plen]
+        return start <= fragment <= end
+    else:
+        return call.startswith(prefix.upper())
+
+
+def find_landcode_for_call(call, dxcc_map):
+    """
+    Find ISO country code for a callsign using dxcc_map (prefix ranges).
+    """
+    call = call.upper()
+    for landcode, prefixes in dxcc_map.items():
+        for prefix in prefixes:
+            if prefix_in_range(call, prefix):
+                return landcode
+    return None
+
+
 def get_pota_park_name(ref_code):
     return pota_references.get(ref_code, "")
 
@@ -4868,52 +5411,38 @@ def get_pota_park_name(ref_code):
 def auto_fill_pota_prefix(entry_var, park_name_var, qso_callsign_var, event=None):
     """
     Auto-fill POTA reference and park name based on callsign and numeric part.
-    If no valid land code or number is found, all fields remain empty.
+    Uses prefix-range DXCC mapping.
     """
     raw_val = entry_var.get().strip()
     call = qso_callsign_var.get().strip().upper()
 
     # Extract only digits from the entry
     pota_digits = re.sub(r"\D", "", raw_val)
-    pota_digits = pota_digits.lstrip("0")  # Remove leading zeros, don't default to '0'
+    pota_digits = pota_digits.lstrip("0")  # Remove leading zeros
 
-    pota_landcode = None  # Always initialize
+    pota_landcode = None
 
     if pota_digits and call:
-        land_prefix = None
+        # Zoek landcode met nieuwe prefix-range lookup
+        pota_landcode = find_landcode_for_call(call, dxcc_to_pota_map)
 
-        # Try to find matching DXCC entry for the callsign
-        for entry in dxcc_data:
-            match_found = False
-            for p in entry.prefixes[1:]:
-                if call.startswith(p.upper()):
-                    land_prefix = entry.prefixes[0].upper()
-                    match_found = True
-                    break
-            if not match_found and call.startswith(entry.prefixes[0].upper()):
-                land_prefix = entry.prefixes[0].upper()
-                match_found = True
-            if match_found:
-                break
-
-        # Fallback: take first letter(s) of callsign if no DXCC match
-        if not land_prefix:
+        # Fallback: neem letters van callsign
+        if not pota_landcode:
             match = re.match(r"^([A-Z]+)", call)
             if match:
-                land_prefix = match.group(1).upper()
-
-        pota_landcode = dxcc_to_pota_map.get(land_prefix, land_prefix) if land_prefix else None
+                pota_landcode = match.group(1).upper()
 
     if pota_landcode and pota_digits:
-        # Pad digits to 4 digits
+        # Pad digits to 4
         padded_digits = pota_digits.zfill(4)
         ref_code = f"{pota_landcode}-{padded_digits}"
         entry_var.set(ref_code)
         update_pota_park_name(ref_code, park_name_var)
     else:
-        # No valid code or digits → clear everything
+        # Geen geldige code → leegmaken
         entry_var.set("")
         park_name_var.set("")
+
 
 
 
@@ -5516,15 +6045,6 @@ root = tk.Tk()
 style = ttk.Style()
 style.theme_use("clam")
 
-if platform.system() == "Darwin": # MacOS
-    root.geometry("620x650")
-    root.minsize(620, 700)
-else: # Linux, Windows
-    root.geometry("680x810")
-    root.minsize(680, 810)
-
-##root.resizable(False, False)
-
 # Global variable for the logbook window
 Logbook_Window = None
 
@@ -5561,6 +6081,7 @@ qso_rst_sent_var = tk.StringVar(value="59")
 qso_rst_received_var = tk.StringVar(value="59")
 qso_sent_exchange_var = tk.StringVar(value="1")
 qso_receive_exchange_var = tk.StringVar()
+qso_receive_exchange_var.trace("w", lambda *args: qso_receive_exchange_var.set(qso_receive_exchange_var.get().upper()))
 qso_comment_var = tk.StringVar()
 qso_frequency_var = tk.StringVar()
 qso_band_var = tk.StringVar(value="20m")
@@ -5631,6 +6152,9 @@ pota_park_name_var = tk.StringVar()
 # Summits On The Air
 sota_var = tk.StringVar()
 sota_var.trace("w", lambda *args: sota_var.set(sota_var.get().upper()))
+sota_name_var = tk.StringVar()
+sota_lat_var = tk.StringVar()
+sota_long_var = tk.StringVar()
 
 # World Lighthouse On The Air
 wlota_var = tk.StringVar()
@@ -5758,7 +6282,9 @@ help_menu.add_command(label="Download latest CTY.DAT file", command=download_cty
 help_menu.add_command(label="Download latest Pota reference file", command=download_pota_file)
 help_menu.add_command(label="Download latest WWFF reference file", command=download_wwffref_file)
 help_menu.add_command(label="Download latest BOTA reference file", command=download_bota_file)
+help_menu.add_command(label="Download latest COTA reference file", command=download_cota_file)
 help_menu.add_command(label="Download latest IOTA reference file", command=download_iota_file)
+help_menu.add_command(label="Download latest SOTA reference file", command=download_sota_file)
 help_menu.add_command(label="Download Satellites Names", command=download_satellites)
 help_menu.add_separator()
 help_menu.add_command(label="About", command=show_about)
@@ -5820,26 +6346,8 @@ def set_focus_color(event):
 def reset_focus_color(event):
     event.widget.configure(background="white")
 
-
-def handle_callsign_from_spot(callsign, freq=None, mode=None):
-    qso_callsign_var.set(callsign)
-    callsign_entry.focus_set()
-    callsign_entry.icursor(tk.END)
-
-    # If frequency tracking is not active then update frequency and mode entries
-    if not freqmode_tracking_var.get():
-        if freq:
-            qso_frequency_var.set(freq)
-
-        if mode and mode in mode_combobox['values']:
-            qso_mode_var.set(mode)
-
-    use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=False)
-    if use_qrz:
-        threaded_on_query()
-
-
 def on_tab_press(event):
+    send_callsign_to_dxcluster()
     use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=True)
     if not use_qrz:
         return  # QRZ lookup disabled, do nothing
@@ -5848,6 +6356,34 @@ def on_tab_press(event):
     return None
 
 
+def handle_callsign_from_spot(callsign, freq=None, mode=None):
+    # Always clear reference fields before inserting a new spot from DXCluster
+    try:
+        reset_fields()
+
+    except Exception:
+        # If any variable is not initialized yet, ignore and continue
+        pass
+
+    # Populate primary fields
+    qso_callsign_var.set(callsign)
+    callsign_entry.focus_set()
+    callsign_entry.icursor(tk.END)
+
+    # If frequency/mode tracking is disabled, update them from the spot
+    if not freqmode_tracking_var.get():
+        if freq:
+            qso_frequency_var.set(freq)
+        if mode and mode in mode_combobox['values']:
+            qso_mode_var.set(mode)
+
+    # Optional: trigger QRZ lookup if enabled
+    use_qrz = config.getboolean("QRZ", "use_qrz_lookup", fallback=False)
+    if use_qrz:
+        threaded_on_query()
+
+    return None
+
 
 
 
@@ -5855,14 +6391,15 @@ def on_tab_press(event):
 
 
 My_Info_Frame_row       = 0
-QSO_DateTime_Frame_row  = 1
-MainEntry_Frame_row     = 2
-WWFFPOTA_Frame_row      = 4
-QRZ_Info_Frame_row      = 5
-DXCC_QRZ_Info_row       = 6
-Workedb4_Frame_row      = 7
-Button_Frame_row        = 8
-Status_Frame_row        = 9
+My_Activation_Frame_row = 1
+QSO_DateTime_Frame_row  = 2
+MainEntry_Frame_row     = 3
+WWFFPOTA_Frame_row      = 5
+QRZ_Info_Frame_row      = 6
+DXCC_QRZ_Info_row       = 7
+Workedb4_Frame_row      = 8
+Button_Frame_row        = 9
+Status_Frame_row        = 10
 
 
 
@@ -5875,58 +6412,100 @@ root.option_add("*TCombobox*Font", ("Arial", 10))
 style.configure('TNotebook.Tab', font=('Arial', 10, 'bold'))
 
 
-# MY INFO FRAME
-station_info_frame = tk.LabelFrame(root, bd=2, font=('Arial', 10, 'bold'), relief='groove', text="Station Information", labelanchor="n", pady=Internal_Y_Padding, bg='lightgrey')
-station_info_frame.grid(row=My_Info_Frame_row, column=0, columnspan=7, sticky='ew', padx=5, pady=Frame_Y_Padding)
+from tkinter import ttk
+import tkinter as tk
+
+# Notebook voor Station en Activation info
+info_notebook = ttk.Notebook(root)
+info_notebook.grid(row=My_Info_Frame_row, column=0, columnspan=7,
+                   sticky='nsew', padx=5, pady=Frame_Y_Padding)
+
+# ==============================
+# STATION INFO TAB
+# ==============================
+station_info_frame = tk.Frame(info_notebook, bd=2, relief='groove',
+                              pady=Internal_Y_Padding, bg='lightgrey')
+info_notebook.add(station_info_frame, text="My Station Information")
 
 for i in range(6):
     station_info_frame.grid_columnconfigure(i, weight=1)
 
 tk.Label(station_info_frame, text="Callsign:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=0, sticky='e', padx=5)
-station_callsign_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_callsign_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'),
+                                  state='disabled', disabledbackground='white',
+                                  disabledforeground='black', relief='sunk')
 station_callsign_entry.grid(row=0, column=1, sticky='w', padx=5)
 
 tk.Label(station_info_frame, text="Operator:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=2, sticky='e', padx=5)
-station_operator_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_operator_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'),
+                                  state='disabled', disabledbackground='white',
+                                  disabledforeground='black', relief='sunk')
 station_operator_entry.grid(row=0, column=3, sticky='w', padx=5)
 
 tk.Label(station_info_frame, text="Locator:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=4, sticky='e', padx=5)
-station_locator_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_locator_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'),
+                                 state='disabled', disabledbackground='white',
+                                 disabledforeground='black', relief='sunk')
 station_locator_entry.grid(row=0, column=5, sticky='w', padx=5)
 
-'''
 tk.Label(station_info_frame, text="Location:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=0, sticky='e', padx=5)
-station_location_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
+station_location_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'),
+                                  state='disabled', disabledbackground='white',
+                                  disabledforeground='black', relief='sunk')
 station_location_entry.grid(row=1, column=1, sticky='w', padx=5)
-'''
 
-tk.Label(station_info_frame, text="BOTA:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=0, sticky='e', padx=5)
-station_bota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-station_bota_entry.grid(row=1, column=1, sticky='w', padx=5)
+# ==============================
+# ACTIVATION INFO TAB
+# ==============================
+activation_info_frame = tk.Frame(info_notebook, bd=2, relief='groove',
+                                 pady=Internal_Y_Padding, bg='lightgrey')
+info_notebook.add(activation_info_frame, text="My Activation Information")
 
-tk.Label(station_info_frame, text="COTA:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=2, sticky='e', padx=5)
-station_cota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-station_cota_entry.grid(row=1, column=3, sticky='w', padx=5)
+for i in range(6):
+    activation_info_frame.grid_columnconfigure(i, weight=1)
 
-tk.Label(station_info_frame, text="IOTA:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=4, sticky='e', padx=5)
-station_iota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-station_iota_entry.grid(row=1, column=5, sticky='w', padx=5)
+tk.Label(activation_info_frame, text="BOTA:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=0, sticky='e', padx=5)
+station_bota_entry = tk.Entry(activation_info_frame, font=('Arial', 10, 'bold'),
+                              state='disabled', disabledbackground='white',
+                              disabledforeground='black', relief='sunk')
+station_bota_entry.grid(row=0, column=1, sticky='w', padx=5)
 
-tk.Label(station_info_frame, text="POTA:", font=('Arial', 10), bg='lightgrey').grid(row=2, column=0, sticky='e', padx=5)
-station_pota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-station_pota_entry.grid(row=2, column=1, sticky='w', padx=5)
+tk.Label(activation_info_frame, text="COTA:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=2, sticky='e', padx=5)
+station_cota_entry = tk.Entry(activation_info_frame, font=('Arial', 10, 'bold'),
+                              state='disabled', disabledbackground='white',
+                              disabledforeground='black', relief='sunk')
+station_cota_entry.grid(row=0, column=3, sticky='w', padx=5)
 
-tk.Label(station_info_frame, text="SOTA:", font=('Arial', 10), bg='lightgrey').grid(row=2, column=2, sticky='e', padx=5)
-station_sota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-station_sota_entry.grid(row=2, column=3, sticky='w', padx=5)
+tk.Label(activation_info_frame, text="IOTA:", font=('Arial', 10), bg='lightgrey').grid(row=0, column=4, sticky='e', padx=5)
+station_iota_entry = tk.Entry(activation_info_frame, font=('Arial', 10, 'bold'),
+                              state='disabled', disabledbackground='white',
+                              disabledforeground='black', relief='sunk')
+station_iota_entry.grid(row=0, column=5, sticky='w', padx=5)
 
-tk.Label(station_info_frame, text="WLOTA:", font=('Arial', 10), bg='lightgrey').grid(row=2, column=4, sticky='e', padx=5)
-station_wlota_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-station_wlota_entry.grid(row=2, column=5, sticky='w', padx=5)
+tk.Label(activation_info_frame, text="POTA:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=0, sticky='e', padx=5)
+station_pota_entry = tk.Entry(activation_info_frame, font=('Arial', 10, 'bold'),
+                              state='disabled', disabledbackground='white',
+                              disabledforeground='black', relief='sunk')
+station_pota_entry.grid(row=1, column=1, sticky='w', padx=5)
 
-tk.Label(station_info_frame, text="WWFF:", font=('Arial', 10), bg='lightgrey').grid(row=3, column=0, sticky='e', padx=5)
-station_wwff_entry = tk.Entry(station_info_frame, font=('Arial', 10, 'bold'), state='disabled', disabledbackground='white', disabledforeground='black', relief='sunk')
-station_wwff_entry.grid(row=3, column=1, sticky='w', padx=5)
+tk.Label(activation_info_frame, text="SOTA:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=2, sticky='e', padx=5)
+station_sota_entry = tk.Entry(activation_info_frame, font=('Arial', 10, 'bold'),
+                              state='disabled', disabledbackground='white',
+                              disabledforeground='black', relief='sunk')
+station_sota_entry.grid(row=1, column=3, sticky='w', padx=5)
+
+tk.Label(activation_info_frame, text="WLOTA:", font=('Arial', 10), bg='lightgrey').grid(row=1, column=4, sticky='e', padx=5)
+station_wlota_entry = tk.Entry(activation_info_frame, font=('Arial', 10, 'bold'),
+                               state='disabled', disabledbackground='white',
+                               disabledforeground='black', relief='sunk')
+station_wlota_entry.grid(row=1, column=5, sticky='w', padx=5)
+
+tk.Label(activation_info_frame, text="WWFF:", font=('Arial', 10), bg='lightgrey').grid(row=2, column=0, sticky='e', padx=5)
+station_wwff_entry = tk.Entry(activation_info_frame, font=('Arial', 10, 'bold'),
+                              state='disabled', disabledbackground='white',
+                              disabledforeground='black', relief='sunk')
+station_wwff_entry.grid(row=2, column=1, sticky='w', padx=5)
+
 
 
 
@@ -6000,15 +6579,30 @@ def toggle_serial_fields():
             print(f"Error retrieving last STX: {e}")
 
 
+
 tk.Label(MainEntry_frame, text="Contest:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='e')
 
 use_serial_checkbox = tk.Checkbutton(MainEntry_frame, text='Use Serial',variable=use_serial_var, command=toggle_serial_fields)
 use_serial_checkbox.grid(row=1, column=1, padx=5, sticky='w')
+use_serial_checkbox.config(takefocus=False)
 
 # SENT
 tk.Label(MainEntry_frame, text="Sent:", font=('Arial', 10)).grid(row=0, column=2, padx=5, sticky='e')
-rst_sent_combobox = ttk.Combobox(MainEntry_frame, textvariable=qso_rst_sent_var, values=rst_options, font=('Arial', 14, 'bold'), width=8)
-rst_sent_combobox.grid(row=0, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
+rst_sent_entry = tk.Entry(MainEntry_frame, textvariable=qso_rst_sent_var, font=('Arial', 14, 'bold'), width=6)
+rst_sent_entry.grid(row=0, column=3, padx=5, pady=Internal_Y_Padding, sticky='w')
+
+tk.Button(MainEntry_frame, text="👆",
+                        font=("Segoe UI Emoji", 10, 'bold'),
+                        bg="#00FF80",
+                        fg="#000000",
+                        activebackground="#00AA80",
+                        activeforeground="#000000",
+                        command=lambda: open_selector(root, qso_rst_sent_var, rst_options, "Select RST"),
+                        width=3,
+                        takefocus=False
+).grid(row=0, column=3, padx=(80, 5), pady=Internal_Y_Padding, sticky='w')
+
+
 
 # SENT Exchange
 tk.Label(MainEntry_frame, text="Sent #:", font=('Arial', 10)).grid(row=1, column=2, padx=5, sticky='e')
@@ -6019,8 +6613,19 @@ sent_exchange_entry.bind("<FocusOut>", reset_focus_color)
 
 # RECEIVED
 tk.Label(MainEntry_frame, text="Received:", font=('Arial', 10)).grid(row=0, column=4, padx=5, sticky='e')
-rst_received_combobox = ttk.Combobox(MainEntry_frame, textvariable=qso_rst_received_var, values=rst_options, font=('Arial', 14, 'bold'), width=8)
-rst_received_combobox.grid(row=0, column=5, padx=5, pady=Internal_Y_Padding, sticky='w')
+rst_received_entry = tk.Entry(MainEntry_frame, textvariable=qso_rst_received_var, font=('Arial', 14, 'bold'), width=6)
+rst_received_entry.grid(row=0, column=5, padx=5, pady=Internal_Y_Padding, sticky='w')
+
+tk.Button(MainEntry_frame, text="👆",
+                        font=("Segoe UI Emoji", 10, 'bold'),
+                        bg="#00FF80",
+                        fg="#000000",
+                        activebackground="#00AA80",
+                        activeforeground="#000000",
+                        command=lambda: open_selector(root, qso_rst_received_var, rst_options, "Select RST"),
+                        width=3,
+                        takefocus=False
+).grid(row=0, column=5, padx=(80, 5), pady=Internal_Y_Padding, sticky='w')
 
 # RECEIVE Exchange
 tk.Label(MainEntry_frame, text="Rcv. #:", font=('Arial', 10)).grid(row=1, column=4, padx=5, sticky='e')
@@ -6112,24 +6717,39 @@ bota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 bota_entry.bind("<FocusIn>", set_focus_color)
 bota_entry.bind("<FocusOut>", lambda e: auto_fill_bota_prefix(bota_var, bota_name_var, bota_lat_var, bota_long_var, qso_callsign_var))
 
-bota_map_button = tk.Button(bota_tab, text="Show Bunker on Map", command=lambda: open_osm_map(bota_lat_var, bota_long_var, station_locator_var, station_callsign_var, bota_var.get(), bota_name_var.get()))
+bota_map_button = tk.Button(bota_tab, text="Show Bunker on Map", takefocus=False, command=lambda: open_osm_map(bota_lat_var, bota_long_var, station_locator_var, station_callsign_var, bota_var.get(), bota_name_var.get()))
 bota_map_button.grid(row=0, column=2, rowspan=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
 
 tk.Label(bota_tab, text="Bunker Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
 tk.Label(bota_tab, textvariable=bota_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=5, sticky='w')
 
-# COTA tab
+
+
+
+
+
+# --- COTA Tab ---
 cota_tab = tk.Frame(notebook)
-notebook.add(cota_tab, text="COTA")
+notebook.add(cota_tab, text="COTA/WCA")
 
 cota_tab.grid_columnconfigure(0, weight=0, minsize=70)
 cota_tab.grid_columnconfigure(1, weight=1)
 cota_tab.grid_columnconfigure(2, weight=0)
 
 tk.Label(cota_tab, text="Ref no.:", font=('Arial', 10), width=12).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
-bota_entry = tk.Entry(cota_tab, textvariable=cota_var, font=('Arial', 14, 'bold'), width=12)
-bota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
-bota_entry.bind("<FocusIn>", set_focus_color)
+cota_entry = tk.Entry(cota_tab, textvariable=cota_var, font=('Arial', 14, 'bold'), width=12)
+cota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
+cota_entry.bind("<FocusIn>", set_focus_color)
+cota_entry.bind("<FocusOut>", lambda e: auto_fill_cota_prefix(cota_var, cota_name_var, qso_callsign_var))
+
+tk.Label(cota_tab, text="Castle Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
+tk.Label(cota_tab, textvariable=cota_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=5, sticky='w')
+
+
+
+
+
+
 
 
 # IOTA tab
@@ -6149,7 +6769,7 @@ iota_entry.bind("<FocusIn>", set_focus_color)
 iota_entry.bind("<FocusOut>", lambda e: auto_fill_iota_prefix(iota_var, iota_name_var, iota_lat_var, iota_long_var, qso_callsign_var))
 
 # Map button now uses iota_lat_var and iota_long_var
-iota_map_button = tk.Button(iota_tab, text="Show Island on Map",
+iota_map_button = tk.Button(iota_tab, text="Show Island on Map", takefocus=False,
                             command=lambda: open_osm_map(iota_lat_var, iota_long_var,
                                                          station_locator_var, station_callsign_var,
                                                          iota_var.get(), iota_name_var.get()))
@@ -6177,17 +6797,42 @@ pota_entry.bind("<FocusOut>", lambda e: auto_fill_pota_prefix(pota_var, pota_par
 tk.Label(pota_tab, text="Park Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
 tk.Label(pota_tab, textvariable=pota_park_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, padx=5, sticky='w')
 
-# SOTA tab
+# ==================================================
+# SOTA Tab GUI (voeg toe in Notebook)
+# ==================================================
 sota_tab = tk.Frame(notebook)
 notebook.add(sota_tab, text="SOTA")
 
 sota_tab.grid_columnconfigure(0, weight=0, minsize=70)
 sota_tab.grid_columnconfigure(1, weight=1)
+sota_tab.grid_columnconfigure(2, weight=1)
+sota_tab.grid_columnconfigure(3, weight=1)
 
-tk.Label(sota_tab, text="Ref no.:", font=('Arial', 10), width=12).grid(row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e')
+# Ref entry (zoekveld)
+tk.Label(sota_tab, text="Ref no.:", font=('Arial', 10), width=12).grid(
+    row=0, column=0, padx=5, pady=Internal_Y_Padding, sticky='e'
+)
 sota_entry = tk.Entry(sota_tab, textvariable=sota_var, font=('Arial', 14, 'bold'), width=12)
 sota_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 sota_entry.bind("<FocusIn>", set_focus_color)
+sota_entry.bind("<FocusOut>", lambda e: auto_fill_sota_prefix(sota_var, sota_name_var, sota_lat_var, sota_long_var, qso_callsign_var, sota_matches))
+
+
+# Dropdown combobox
+sota_matches = ttk.Combobox(sota_tab, state="readonly", font=('Arial', 10), width=20)
+sota_matches.grid(row=0, column=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
+sota_matches.bind("<<ComboboxSelected>>", on_sota_select)
+
+# Map button
+sota_map_button = tk.Button(sota_tab, text="Show Summit on Map", takefocus=False, command=lambda: open_osm_map(sota_lat_var, sota_long_var, station_locator_var, station_callsign_var, sota_var.get(), sota_name_var.get()))
+sota_map_button.grid(row=0, column=3, rowspan=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
+
+# Summit label
+tk.Label(sota_tab, text="Summit name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
+tk.Label(sota_tab, textvariable=sota_name_var, font=('Arial', 10, 'bold')).grid(row=1, column=1, sticky='w')
+
+
+
 
 # WLOTA tab
 wlota_tab = tk.Frame(notebook)
@@ -6215,13 +6860,8 @@ tk.Label(wwff_tab, text="Ref no.:", font=('Arial', 10), width=12).grid(row=0, co
 wwff_entry = tk.Entry(wwff_tab, textvariable=wwff_var, font=('Arial', 14, 'bold'), width=12)
 wwff_entry.grid(row=0, column=1, padx=5, pady=Internal_Y_Padding, sticky='w')
 wwff_entry.bind("<FocusIn>", set_focus_color)
-wwff_entry.bind(
-    "<FocusOut>",
-    lambda e: auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, wwff_lat_var, wwff_long_var, qso_callsign_var)
-)
-
-wwff_map_button = tk.Button(wwff_tab, text="Show Park on Map", 
-                            command=lambda: open_osm_map(    wwff_lat_var, wwff_long_var, station_locator_var, station_callsign_var, wwff_var.get(), wwff_park_name_var.get()))
+wwff_entry.bind("<FocusOut>", lambda e: auto_fill_wwff_prefix(wwff_var, wwff_park_name_var, wwff_lat_var, wwff_long_var, qso_callsign_var))
+wwff_map_button = tk.Button(wwff_tab, text="Show Park on Map", takefocus=False, command=lambda: open_osm_map(    wwff_lat_var, wwff_long_var, station_locator_var, station_callsign_var, wwff_var.get(), wwff_park_name_var.get()))
 wwff_map_button.grid(row=0, column=2, rowspan=2, padx=5, pady=Internal_Y_Padding, sticky='ew')
 
 tk.Label(wwff_tab, text="Park Name:", font=('Arial', 10)).grid(row=1, column=0, padx=5, sticky='w')
@@ -6234,16 +6874,7 @@ tk.Label(wwff_tab, textvariable=wwff_park_name_var, font=('Arial', 10, 'bold')).
 
 
 
-
-
-
-
-
-
-
-
-
-notebook = ttk.Notebook(root)
+notebook = ttk.Notebook(root, takefocus=False)
 notebook.grid(row=DXCC_QRZ_Info_row, column=0, columnspan=99, sticky='nsew', padx=5, pady=5)
 
 # Tab 1: DXCC Info
@@ -6348,7 +6979,7 @@ y_scroll.pack(side="right", fill="y")
 
 # TreeView
 cols = ("Callsign", "Date", "Time", "Band", "Mode", "Frequency", "Country")
-workedb4_tree = ttk.Treeview(tree_frame, columns=cols, show='headings', height=5, yscrollcommand=y_scroll.set)
+workedb4_tree = ttk.Treeview(tree_frame, columns=cols, show='headings', height=3, yscrollcommand=y_scroll.set)
 
 y_scroll.config(command=workedb4_tree.yview)
 
@@ -6477,8 +7108,19 @@ QRZ_status_label = tk.Label(status_frame, font=('Arial', 8, 'bold'), text="QRZ S
 QRZ_status_label.grid(row=0, column=1, sticky='e', padx=5)
 
 
-# Buttons Bindings
+# Let Tkinter calculate the required window size after all widgets are placed
+root.update_idletasks()
 
+# Fix the window size to the calculated size
+final_width = root.winfo_width()
+final_height = root.winfo_height()
+root.geometry(f"{final_width}x{final_height}")
+
+# Disable resizing (window is now fixed)
+root.resizable(False, False)
+
+
+# Buttons Bindings
 # Bind F1 key to reset_fields function
 def invoke_reset_fields(event=None):
     reset_fields()

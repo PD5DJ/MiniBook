@@ -43,9 +43,16 @@ class RigCtlGUI:
 
         self.rigs = self.load_rigs()
 
-        self.presets = {
-            "Default": {}, "ICOM 7300": {}, "FT-991A": {}, "KX2": {}, "Custom": {}
+        self.presets = {"ICOM 7300": {"serial_port": "", "baudrate": "115200", "server_port": "4532", "rig_model": "Icom IC-7300", "data_bits": "8", "stop_bits": "1", "handshake": "None", "rts": False, "dtr": False},
+                        "ICOM 705": {"serial_port": "", "baudrate": "115200", "server_port": "4532", "rig_model": "Icom IC-705", "data_bits": "8", "stop_bits": "1", "handshake": "None", "rts": False, "dtr": False},
+                        "ICOM 9700": {"serial_port": "", "baudrate": "115200", "server_port": "4532", "rig_model": "Icom IC-9700", "data_bits": "8", "stop_bits": "1", "handshake": "None", "rts": False, "dtr": False},
+                        "ICOM 7610": {"serial_port": "", "baudrate": "115200", "server_port": "4532", "rig_model": "Icom IC-7610", "data_bits": "8", "stop_bits": "1", "handshake": "None", "rts": False, "dtr": False},
+                        "ICOM 7000": {"serial_port": "", "baudrate": "19200",  "server_port": "4532", "rig_model": "Icom IC-7000", "data_bits": "8", "stop_bits": "1", "handshake": "None", "rts": False, "dtr": False},
+                        "ICOM 7100": {"serial_port": "", "baudrate": "19200",  "server_port": "4532", "rig_model": "Icom IC-7100", "data_bits": "8", "stop_bits": "1", "handshake": "None", "rts": False, "dtr": False},
+                        "Yaesu FTDX10": {"serial_port": "", "baudrate": "38400", "server_port": "4532", "rig_model": "Yaesu FTDX-10", "data_bits": "8", "stop_bits": "1", "handshake": "None", "rts": False, "dtr": False},
+            "Custom": {}
         }
+
 
         self.create_widgets()
         self.load_settings()
@@ -331,14 +338,21 @@ class RigCtlGUI:
             config.write(f)
 
     def load_settings(self):
+        # Stel standaard rigctld.exe pad in (hamlib submap naast de app)
+        default_rigctld = Path.cwd() / "hamlib" / "rigctld.exe"
+
         if not os.path.exists(SETTINGS_FILE):
+            # Geen settings → standaard pad gebruiken
+            self.rigctld_path_var.set(str(default_rigctld))
             return
 
         config = configparser.ConfigParser()
         config.read(SETTINGS_FILE)
 
         s = config['Settings']
-        self.rigctld_path_var.set(s.get('rigctld_path', ''))
+        self.rigctld_path_var.set(
+            s.get('rigctld_path', str(default_rigctld))
+        )
         self.autostart_var.set(s.getboolean('autostart', False))
         last_preset = s.get('last_preset', '')
 

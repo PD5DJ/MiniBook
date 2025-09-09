@@ -19,6 +19,7 @@
 #                           - Auto reconnect function added, when connection drops, app will try to reconnect every 5 seconds, when Auto Reconnect is enabled.
 #   11-07-2025  :   1.0.6   - Band Combobox changed for band buttons.
 #   10-08-2025  :   1.0.7   - Changed filepath structure
+#   29-08-2025  :   1.0.8   - Send Spot handling changed
 #**********************************************************************************************************************************
 
 import asyncio
@@ -36,7 +37,7 @@ from datetime import datetime
 from cty_parser import parse_cty_file
 import requests
 
-VERSION_NUMBER = ("v1.0.7")
+VERSION_NUMBER = ("v1.0.8")
 
 SETTINGS_FOLDER     = Path.cwd() / "settings"
 DATA_FOLDER         = Path.cwd() / "data"
@@ -219,6 +220,18 @@ class DXClusterApp:
 
         self.restore_window_position()
 
+        # --- Fix window size after building UI ---
+        self.root.update_idletasks()  # Zorg dat layout klaar is
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = self.root.winfo_x()
+        y = self.root.winfo_y()
+
+        # Startgrootte instellen, maar wel verticaal resizable
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self.root.resizable(False, True)
+
+
 
 
     def on_close_wrapper(self):
@@ -242,7 +255,7 @@ class DXClusterApp:
         top_frame.columnconfigure(0, weight=1)
         top_frame.columnconfigure(1, weight=0)
 
-        filters_frame = tk.LabelFrame(top_frame, text="Spot Filters", relief="groove", bd=2)
+        filters_frame = tk.LabelFrame(top_frame, font=('Arial', 10, 'bold'), text="Spot Filters", relief="groove", bd=2, labelanchor="n")
         filters_frame.grid(row=0, column=0, padx=(0, 10), pady=(0, 10), sticky="nsew")
 
         self.band_var = tk.StringVar(value="ALL")
@@ -250,13 +263,13 @@ class DXClusterApp:
         def get_band_low(b):
             return BANDS[b][0] if b in BANDS else float('inf')
 
-        # Sorteer banden op frequentie
+        # Sort tires by frequency
         sorted_bands = sorted([b for b in BANDS if b not in ("HF", "VHF", "UHF", "SHF")], key=get_band_low)
         bands_list = ["ALL"] + sorted_bands
 
         self.band_buttons = {}
 
-        # Maak frame aan op row=1
+        # Button rows
         band_buttons_frame = tk.Frame(filters_frame)
         band_buttons_frame.grid(row=0, column=0, columnspan=10, sticky="w", pady=(2, 5))
 
@@ -272,8 +285,7 @@ class DXClusterApp:
             update_band_highlight()
             self.filter_spots()
 
-        # Layout in 2 rijen (bijv. 8 knoppen per rij)
-        buttons_per_row = 10
+        buttons_per_row = 9
         for i, band in enumerate(bands_list):
             row = i // buttons_per_row
             col = i % buttons_per_row
@@ -284,13 +296,12 @@ class DXClusterApp:
 
         update_band_highlight()
 
-
-
         tk.Label(filters_frame, text="Callsign Filter:").grid(row=2, column=0, sticky="w")
         self.mode_var = tk.StringVar()
         modes_with_all = ["ALL"] + list(MODES.keys())
+        import tkinter.font as tkfont
+        font_small = tkfont.Font(family="Arial", size=12)
         self.mode_menu = ttk.Combobox(filters_frame, textvariable=self.mode_var, values=modes_with_all, state="readonly", width=10)
-        font_small = tkinter.font.Font(family="Arial", size=12)
         self.mode_menu.configure(font=font_small)
         self.mode_menu.grid(row=2, column=1, padx=(2, 10), sticky=tk.W)
         self.mode_menu.current(0)
@@ -303,23 +314,34 @@ class DXClusterApp:
         tk.Button(filters_frame, text="⚙", width=2, command=self.manage_custom_filters).grid(row=2, column=3, padx=(0, 5))
         tk.Button(filters_frame, text="?", width=2, command=self.show_regex_help).grid(row=2, column=4, padx=(0, 5))
 
-
-        buttons_frame = tk.LabelFrame(top_frame, text="Actions", relief="groove", bd=2)
+        buttons_frame = tk.LabelFrame(top_frame, font=('Arial', 10, 'bold'), text="Spotting", relief="groove", bd=2, labelanchor="n")
         buttons_frame.grid(row=0, column=1, padx=(0, 0), pady=(0, 10), sticky="nsew")
         top_frame.columnconfigure(1, weight=1)
 
-        buttons_frame.columnconfigure(0, weight=1)
-        buttons_frame.columnconfigure(1, weight=0)
-        buttons_frame.columnconfigure(2, weight=1)
+        self.spot_callsign_var = tk.StringVar()
+        self.spot_freq_var = tk.StringVar()
+        self.spot_comment_var = tk.StringVar()
 
-        tk.Label(buttons_frame).grid(row=0, column=0)
-        send_spot_btn = tk.Button(buttons_frame, text="Send Spot", command=self.open_send_spot_popup,
-                                fg="white", bg="green", width=12)
-        send_spot_btn.grid(row=1, column=1, pady=5)
-        tk.Label(buttons_frame).grid(row=0, column=2)
+        tk.Label(buttons_frame, text="Callsign:").grid(row=0, column=0, sticky="e", padx=5, pady=2)
+        tk.Entry(buttons_frame, textvariable=self.spot_callsign_var).grid(row=0, column=1, padx=5, pady=2, sticky="ew")
 
+        tk.Label(buttons_frame, text="Freq(MHz):").grid(row=1, column=0, sticky="e", padx=5, pady=2)
+        tk.Entry(buttons_frame, textvariable=self.spot_freq_var).grid(row=1, column=1, padx=5, pady=2, sticky="ew")
+
+        tk.Label(buttons_frame, text="Comment:").grid(row=2, column=0, sticky="e", padx=5, pady=2)
+        tk.Entry(buttons_frame, textvariable=self.spot_comment_var).grid(row=2, column=1, padx=5, pady=2, sticky="ew")
+
+        btn_frame = tk.Frame(buttons_frame)
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=5, padx=10, sticky="ew")
+
+        send_spot_btn = tk.Button(btn_frame, text="Send Spot", command=self.send_spot, fg="white", bg="green", width=12)
+        send_spot_btn.pack(side="left", expand=True, fill="x", padx=(0, 5))
+
+        clear_btn = tk.Button(btn_frame, text="Clear", command=self.clear_spot_fields, fg="black", bg="lightgrey", width=12)
+        clear_btn.pack(side="left", expand=True, fill="x", padx=(5, 0))
+
+        # Treeview header bold
         style = ttk.Style(self.root)
-        import tkinter.font as tkfont
         default_font = tkfont.nametofont("TkHeadingFont")
         bold_font = default_font.copy()
         bold_font.configure(weight="bold")
@@ -339,26 +361,22 @@ class DXClusterApp:
         self.cluster_tree.heading("prefix", text="Prefix")
         self.cluster_tree.heading("host", text="Host")
         self.cluster_tree.heading("port", text="Port")
-
         self.cluster_tree.column("prefix", width=70, anchor="center")
         self.cluster_tree.column("host", width=100, anchor="center")
         self.cluster_tree.column("port", width=70, anchor="center")
-
         self.cluster_tree.tag_configure('oddrow', background='white')
         self.cluster_tree.tag_configure('evenrow', background='#f0f0f0')
-
         self.cluster_tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.cluster_tree.bind("<Double-1>", self.on_cluster_double_click)
 
-        # Buttons for edditing
+        # Buttons for editing
         cluster_btn_frame = tk.Frame(self.tab_clusters)
         cluster_btn_frame.pack(pady=5)
-
         tk.Button(cluster_btn_frame, text="➕ Add", command=self.add_cluster).pack(side=tk.LEFT, padx=5)
         tk.Button(cluster_btn_frame, text="✏️ Edit", command=self.edit_cluster).pack(side=tk.LEFT, padx=5)
         tk.Button(cluster_btn_frame, text="❌ Delete", command=self.delete_cluster).pack(side=tk.LEFT, padx=5)
 
-        # Additional settings: Host, Login and Reconnect button
+        # Connection settings
         conn_frame = tk.LabelFrame(self.tab_clusters, text="Connection")
         conn_frame.pack(fill="x", padx=10, pady=5)
 
@@ -375,28 +393,40 @@ class DXClusterApp:
 
         self.auto_reconnect_var = tk.BooleanVar()
         self.auto_reconnect_var.set(self.load_ini_setting("AutoReconnect", "0") == "1")
-
         self.auto_reconnect_checkbox = tk.Checkbutton(conn_frame, text="Auto reconnect", variable=self.auto_reconnect_var, command=self.save_auto_reconnect_setting)
         self.auto_reconnect_checkbox.grid(row=0, column=3, rowspan=2, sticky="w", pady=(0, 5))
 
-        # Als AutoReconnect nog niet bestaat in INI, schrijf dan expliciet 0
         if self.load_ini_setting("AutoReconnect", "") == "":
             self.save_auto_reconnect_setting()
-
 
         last_used = self.load_last_used_cluster()
         if last_used:
             self.hostport_var.set(last_used)
-
         if self.auto_reconnect_var.get():
-            self.manual_disconnect = False  # zorg dat reconnect bij opstart werkt
+            self.manual_disconnect = False
             self.root.after(100, self.connect)
 
         self.tab_output = tk.Frame(self.notebook)
         self.notebook.add(self.tab_output, text="Console")
 
-        tree_frame = tk.Frame(self.tab_spots)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
+        # ==================== SPOTS TAB (Grid lay-out) ====================
+        # Make the Spots tab grid-resizable
+        self.tab_spots.grid_rowconfigure(0, weight=1)
+        self.tab_spots.grid_columnconfigure(0, weight=1)
+
+        # Container for Treeview + bottom
+        spots_container = tk.Frame(self.tab_spots)
+        spots_container.grid(row=0, column=0, sticky="nsew")
+
+        # Treeview gets the rack space
+        spots_container.grid_rowconfigure(0, weight=1)
+        spots_container.grid_columnconfigure(0, weight=1)
+        # Reserve a minimum height for the bottom frame so that it remains visible
+        spots_container.grid_rowconfigure(1, weight=0, minsize=46)  # customize to your liking
+
+        # ---- Treeview ----
+        tree_frame = tk.Frame(spots_container)
+        tree_frame.grid(row=0, column=0, sticky="nsew")
 
         tree_scrollbar = tk.Scrollbar(tree_frame)
         tree_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -405,7 +435,8 @@ class DXClusterApp:
             tree_frame,
             columns=("time", "freq", "dx", "country", "spotter", "comment"),
             show="headings",
-            yscrollcommand=tree_scrollbar.set
+            yscrollcommand=tree_scrollbar.set,
+            height=1,   # minimum height in rows -> prevents large min-height
         )
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         tree_scrollbar.config(command=self.tree.yview)
@@ -418,7 +449,6 @@ class DXClusterApp:
             "spotter": {"width": 50},
             "comment": {"width": 150},
         }
-
         for col, options in columns.items():
             self.tree.heading(col, text=col.upper())
             self.tree.column(col, anchor=tk.CENTER, width=options["width"])
@@ -427,37 +457,35 @@ class DXClusterApp:
         self.tree.tag_configure('evenrow', background='#f0f0f0')
         self.tree.tag_configure('worked_today', background='#ffd9b3')
         self.tree.tag_configure('worked', background='#b3e6ff')
-        self.tree.tag_configure('owncall', background='#c6f5c6')  # Lichtgroen
+        self.tree.tag_configure('owncall', background='#c6f5c6')
 
-        bottom_frame = tk.Frame(self.root)
-        bottom_frame.pack(fill="x", padx=10, pady=(5, 10))
+        # ---- Bottom frame: always remains visible ----
+        bottom_frame = tk.Frame(spots_container)
+        bottom_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(5, 10))
 
-        # Linker frame voor labels
         legend_left = tk.Frame(bottom_frame)
         legend_left.pack(side="left")
 
-        worked_legend = tk.Label(legend_left, text="Worked before", bg="#b3e6ff", relief="ridge", borderwidth=1, width=15)
-        worked_legend.pack(side="left", padx=5)
+        tk.Label(legend_left, text="Worked before", bg="#b3e6ff", relief="ridge", borderwidth=1, width=15).pack(side="left", padx=5)
+        tk.Label(legend_left, text="Worked today",  bg="#ffd9b3", relief="ridge", borderwidth=1, width=15).pack(side="left", padx=5)
+        tk.Label(legend_left, text="Self spot",     bg="#c6f5c6", relief="ridge", borderwidth=1, width=15).pack(side="left", padx=5)
 
-        worked_today_legend = tk.Label(legend_left, text="Worked today", bg="#ffd9b3", relief="ridge", borderwidth=1, width=15)
-        worked_today_legend.pack(side="left", padx=5)
-
-        owncall_legend = tk.Label(legend_left, text="Self spot", bg="#c6f5c6", relief="ridge", borderwidth=1, width=15)
-        owncall_legend.pack(side="left", padx=5)
-
-
-        # Rechter frame voor Exit-knop
         exit_right = tk.Frame(bottom_frame)
         exit_right.pack(side="right")
+        tk.Button(exit_right, text="Exit", command=self.on_close, fg="black", bg="lightgrey", width=12).pack(padx=10)
 
-        exit_btn = tk.Button(exit_right, text="Exit", command=self.on_close, fg="black", bg="lightgrey", width=12)
-        exit_btn.pack(padx=10)
-
+        # Console tab
         self.output = tk.Text(self.tab_output, fg="white", bg="black", height=10, width=80)
         self.output.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         self.tree.bind("<<TreeviewSelect>>", self.spot_clicked)
 
+
+    def clear_spot_fields(self):
+        """Clears the spot entry fields: callsign, frequency, comment."""
+        self.spot_callsign_var.set("")
+        self.spot_freq_var.set("")
+        self.spot_comment_var.set("")
 
     # Shows a little help windows how to use REGEX
     def show_regex_help(self):
@@ -558,40 +586,34 @@ class DXClusterApp:
 
 
 
-
-    # Opens Send Spot window
-    def open_send_spot_popup(self):
-        default_dx = ""
-        default_freq = ""
-
-        # Tries to retrieve callsign and frequency from MiniBook
-        if callable(self.get_last_qso_callsign):
-            default_dx = self.get_last_qso_callsign() or ""
-        if callable(self.get_current_frequency):
-            freq_raw = self.get_current_frequency() or ""
-            try:
-                freq_khz = str(int(float(freq_raw) * 1000))
-            except:
-                freq_khz = ""
-            default_freq = freq_khz
-
-        popup = SendSpotPopup(self.root, self, default_dx, default_freq)
-        self.root.wait_window(popup)
-
-
     # Sends spot to Telnet cluster server
-    def send_spot(self, dx, freq, remark):
-        if self.writer is None:
-            self.show_centered_message("Error", "Not connected to Telnet server!", icon="error")
+    def send_spot(self):
+        callsign = self.spot_callsign_var.get().strip()
+        freq_str = self.spot_freq_var.get().strip()
+        comment = self.spot_comment_var.get().strip()
+
+        if not callsign or not freq_str:
+            messagebox.showwarning("Missing data", "Please enter both callsign and frequency.")
             return
 
-        message = f"dx {dx} {freq} {remark}\n"
-
         try:
-            asyncio.run_coroutine_threadsafe(self._async_send(message), self.loop)
-            self.show_centered_message("Sent", f"Spot sent:\n{message}", icon="info")
+            # Zet MHz naar kHz
+            freq_mhz = float(freq_str)
+            freq_khz = int(round(freq_mhz * 1000))
+
+            spot_cmd = f"DX {freq_khz} {callsign} {comment}\n"
+            if self.writer:
+                self.writer.write(spot_cmd.encode())
+                asyncio.run_coroutine_threadsafe(self.writer.drain(), self.loop)
+                self.output.insert(tk.END, f"Sent spot: {spot_cmd}")
+                self.output.see(tk.END)
+                self.clear_spot_fields()
+        except ValueError:
+            messagebox.showerror("Error", f"Invalid frequency: {freq_str}")
         except Exception as e:
-            self.show_centered_message("Error sending", str(e), icon="error")
+            messagebox.showerror("Error", f"Failed to send spot:\n{e}")
+
+
 
 
     def show_centered_message(self, title, message, icon="info", duration=2000):
@@ -599,7 +621,7 @@ class DXClusterApp:
         popup.title(title)
         popup.resizable(False, False)
 
-        # Bereken positie in midden van hoofdvenster
+        # Calculate position in center of main window
         self.root.update_idletasks()
         popup_width = 300
         popup_height = 100
@@ -611,7 +633,7 @@ class DXClusterApp:
         y = main_y + (main_height - popup_height) // 2
         popup.geometry(f"{popup_width}x{popup_height}+{x}+{y}")
 
-        # Icon (optioneel)
+        # Icon (optional)
         if icon == "info":
             icon_text = "ℹ️"
         elif icon == "error":
@@ -622,13 +644,13 @@ class DXClusterApp:
         tk.Label(popup, text=icon_text, font=("Arial", 16)).pack(pady=(10, 0))
         tk.Label(popup, text=message, font=("Arial", 10), wraplength=280).pack(pady=5)
 
-        # Optioneel: knop toevoegen voor handmatig sluiten
+        # Optional: Add button for manual close
         tk.Button(popup, text="OK", command=popup.destroy).pack(pady=10)
 
         popup.transient(self.root)
         popup.grab_set()
 
-        # Sluit automatisch na 'duration' milliseconden (2000 ms = 2 sec)
+        # Close automatically after 'duration' milliseconds (2000 ms = 2 sec)
         popup.after(duration, popup.destroy)
 
         self.root.wait_window(popup)
@@ -658,8 +680,8 @@ class DXClusterApp:
     
     def reconnect(self):
         if self.connected:
-            return  # Al verbonden
-        self.manual_disconnect = False  # reconnect poging toegestaan
+            return
+        self.manual_disconnect = False
         self.connect()
 
 ########
@@ -673,6 +695,8 @@ class DXClusterApp:
             if self.connected:
                 self.disconnect()
             self.hostport_var.set(f"{host}:{port}")
+
+            
 ########
     def save_clusters_to_file(self):
         try:
@@ -749,24 +773,80 @@ class DXClusterApp:
 
 
     def update_treeview_colors(self):
+        """
+        Ensures that:
+        - Rows with special status ('owncall', 'worked_today', 'worked') are given that color
+        - All other rows retain an alternate (even/odd) background
+        Call this function after adding/removing/filtering rows.
+        """
         worked_calls_today = self.get_worked_calls_today() if self.get_worked_calls_today else set()
         current_worked_calls = self.get_worked_calls() if self.get_worked_calls else set()
 
-        for i, item in enumerate(self.tree.get_children()):
-            values = self.tree.item(item, "values")
-            dx_call = values[2].upper()
+        children = self.tree.get_children()
+        for i, item in enumerate(children):
+            try:
+                values = self.tree.item(item, "values")
+                dx_call = values[2].upper() if len(values) >= 3 and values[2] is not None else ""
+            except Exception:
+                dx_call = ""
 
-            callmatch = re.fullmatch(rf"(?i)(.*[/])?{re.escape(self.user_callsign)}([/].*)?", dx_call)
+            # check of het de eigen call is (case-insensitive)
+            callmatch = None
+            if getattr(self, "user_callsign", None):
+                try:
+                    callmatch = re.fullmatch(rf"(.*[/])?{re.escape(self.user_callsign)}([/].*)?", dx_call, flags=re.IGNORECASE)
+                except re.error:
+                    callmatch = None
+
+            # Highlight lines are prioritized; otherwise even/odd
             if callmatch:
-                tag = 'owncall'
+                tag = "owncall"
             elif dx_call in worked_calls_today:
-                tag = 'worked_today'
+                tag = "worked_today"
             elif dx_call in current_worked_calls:
-                tag = 'worked'
+                tag = "worked"
             else:
-                tag = ''
+                tag = "evenrow" if (i % 2) == 0 else "oddrow"
 
+            # set the tag (overwrites previous tags)
             self.tree.item(item, tags=(tag,))
+
+
+    def insert_spot_row(self, spot, at_top=True):
+        """
+        Helps you insert a single spot and then refresh the colors.
+        - spot: dict with keys time, freq, dx, country, spotter, comment (same structure as in your code)
+        - at_top: if True, insert at the top (index 0), otherwise append (end)
+        This function doesn't replace the existing insert_spot, but you can modify 'add_spot_to_treeview'
+        to use it.
+        """
+        try:
+            freq_str = f"{float(spot.get('freq', '')):.4f}" if spot.get('freq', '') != "" else spot.get('freq', '')
+        except Exception:
+            freq_str = spot.get('freq', '')
+
+        values = (
+            spot.get("time", ""),
+            freq_str,
+            spot.get("dx", ""),
+            spot.get("country", ""),
+            spot.get("spotter", ""),
+            spot.get("comment", "")
+        )
+
+        if at_top:
+            # index 0 = on top
+            self.tree.insert("", 0, values=values)
+        else:
+            self.tree.insert("", "end", values=values)
+
+        # if necessary, limit to 100 rows (as you did before)
+        children = self.tree.get_children()
+        if len(children) > 100:
+            self.tree.delete(children[-1])
+
+        # recalculate tags/colors for ALL rows
+        self.update_treeview_colors()
 
 
 
@@ -785,7 +865,7 @@ class DXClusterApp:
 
     def load_host_file(self, default=CLUSTER_FILE):
         try:
-            # Bestaat het clusterbestand niet? Maak een default aan
+            # Doesn't the cluster file exist? Create a default one
             if not os.path.exists(default):
                 default_data = [
                     {"prefix": "PI4CC", "host": "dcx.pi4cc.nl", "port": 8000}
@@ -832,22 +912,22 @@ class DXClusterApp:
         config = configparser.ConfigParser()
         config.optionxform = str
 
-        # Lees bestaande INI (indien aanwezig)
+        # Read existing INI (if any)
         if os.path.exists(INI_FILE):
             config.read(INI_FILE, encoding="utf-8")
 
-        # Voeg secties toe indien ze nog niet bestaan
+        # Add sections if they don't already exist
         if "LAST" not in config:
             config["LAST"] = {}
         if "LOGIN" not in config:
             config["LOGIN"] = {}
 
-        # Vul waarden in
+        # Enter values
         config["LAST"]["host"] = host
         config["LAST"]["port"] = str(port)
         config["LOGIN"]["user"] = login
 
-        # Schrijf terug naar ini
+        # Write back to ini
         with open(INI_FILE, "w", encoding="utf-8") as f:
             config.write(f)
 
@@ -924,9 +1004,9 @@ class DXClusterApp:
 
     def connect(self):
         if self.connected:
-            return  # Vermijd dubbele connecties
+            return  # Avoid duplicate connections
 
-        self.manual_disconnect = False  # reset bij expliciete connect
+        self.manual_disconnect = False  # reset at explicit connect
         hostport = self.hostport_var.get()
         login = self.login_var.get()
         self.user_callsign = login.strip().upper()
@@ -1463,11 +1543,11 @@ class DXClusterApp:
         if os.path.exists(INI_FILE):
             config.read(INI_FILE, encoding="utf-8")
 
-        # Verwijder CustomFilters sectie als deze bestaat
+        # Remove CustomFilters section if it exists
         if "CustomFilters" in config:
             del config["CustomFilters"]
 
-        # Herstel alleen als er nog filters zijn
+        # Only restore if there are still filters
         if self.custom_filters:
             config["CustomFilters"] = {}
             for k, v in self.custom_filters.items():
@@ -1575,7 +1655,7 @@ class DXClusterApp:
         tk.Button(dialog, text="Save", command=save).grid(row=2, column=0, padx=5, pady=5)
         tk.Button(dialog, text="Close", command=dialog.destroy).grid(row=2, column=1, padx=5, pady=5)
 
-# Aanpassen van spot_matches_filters():
+    # Adjusting spot_matches_filters():
     def spot_matches_filters(self, spot):
         band = self.band_var.get()
         mode = self.mode_var.get()
@@ -1610,9 +1690,9 @@ class DXClusterApp:
 
     def safe_write_to_ini(self, section, keyvals):
         """
-        Veilige write naar INI bestand zonder andere secties of hoofdletters te verliezen.
-        - section: naam van de INI sectie (string)
-        - keyvals: dict met key/values die je wilt instellen in die sectie
+        Safely write to an INI file without losing other sections or capitalization.
+        - section: name of the INI section (string)
+        - keyvals: dict with the key/values ​​you want to set in that section
         """
         config = configparser.ConfigParser()
         config.optionxform = str
@@ -1627,103 +1707,6 @@ class DXClusterApp:
 
         with open(INI_FILE, "w", encoding="utf-8") as f:
             config.write(f)
-
-
-
-
-
-
-
-class SendSpotPopup(tk.Toplevel):
-    def __init__(self, parent, app, default_dx="", default_freq=""):
-        super().__init__(parent)
-        self.app = app
-        self.title("Send Spot")
-        self.resizable(False, False)
-
-        callsign_var = tk.StringVar()
-        callsign_var.trace("w", lambda *args: callsign_var.set(callsign_var.get().upper()))
-
-        self.update_idletasks()
-        popup_width = 300
-        popup_height = 160
-
-        main_x = parent.winfo_rootx()
-        main_y = parent.winfo_rooty()
-        main_width = parent.winfo_width()
-        main_height = parent.winfo_height()
-
-        x = main_x + (main_width - popup_width) // 2
-        y = main_y + (main_height - popup_height) // 2
-        self.geometry(f"{popup_width}x{popup_height}+{x}+{y}")
-
-        entry_frame = tk.Frame(self)
-        entry_frame.pack(padx=10, pady=10)
-
-        tk.Label(entry_frame, text="DX Station:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-        self.entry_dx = tk.Entry(entry_frame, textvariable=callsign_var)
-        self.entry_dx.grid(row=0, column=1, padx=5, pady=5)
-
-        tk.Label(entry_frame, text="Freq (kHz):").grid(row=1, column=0, sticky="e", padx=5, pady=5)
-        self.freq_entry = tk.Entry(entry_frame)
-        self.freq_entry.grid(row=1, column=1, padx=5, pady=5)
-
-        tk.Label(entry_frame, text="Remark:").grid(row=2, column=0, sticky="e", padx=5, pady=5)
-        self.remark_entry = tk.Entry(entry_frame)
-        self.remark_entry.grid(row=2, column=1, padx=5, pady=5)
-
-        self.entry_dx.insert(0, default_dx)
-        self.freq_entry.insert(0, default_freq)        
-
-        button_frame = tk.Frame(self)
-        button_frame.pack(pady=(0, 10))
-
-        send_btn = tk.Button(button_frame, text="Send", command=self.send_spot, width=10, bg="red", fg="white")
-        send_btn.pack(side="left", padx=10)
-
-        cancel_btn = tk.Button(button_frame, text="Cancel", command=self.destroy, width=10, bg="lightgrey", fg="black")
-        cancel_btn.pack(side="left", padx=10)
-        
-        # Breng popup naar voren en forceer focus
-        self.lift()
-        self.grab_set()
-        self.focus_force()
-
-        # ENTER = Send Spot
-        self.bind("<Return>", lambda event: self.send_spot())
-
-        # ESC = Annuleer (optioneel, als je dit ook wilt)
-        self.bind("<Escape>", lambda event: self.destroy())
-
-        # Focus automatisch op eerste invoerveld
-        self.entry_dx.focus_set()        
-
-    def send_spot(self):
-        dx = self.entry_dx.get().strip()
-        freq = self.freq_entry.get().strip()
-        remark = self.remark_entry.get().strip()
-
-        if not dx or not freq:
-            tk.messagebox.showwarning("Incomplete", "DX and frequency are required.")
-            self.lift()
-            self.focus_force()
-            return
-
-        if not freq.isdigit():
-            tk.messagebox.showerror("Invalid input", "Frequency must consist of numbers only.")
-            self.lift()
-            self.focus_force()
-            return
-
-        self.app.send_spot(dx, freq, remark)
-        self.destroy()
-
-
-
-
-
-
-
 
 
 # Used when running stand alone
@@ -1755,7 +1738,7 @@ def launch_dx_spot_viewer(
         parent_window = tk.Toplevel()
         parent_window.resizable(True, True)
 
-    DXClusterApp(
+    app = DXClusterApp(
         parent_window,
         rigctl_host,
         rigctl_port,
@@ -1766,3 +1749,8 @@ def launch_dx_spot_viewer(
         get_last_qso_callsign,
         get_current_frequency
     )
+
+    # Save the instance in the parent window so MiniBook can access it
+    parent_window.dxcluster_app = app
+
+    return app

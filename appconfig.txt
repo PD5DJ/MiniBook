@@ -1,2 +1,2 @@
-MiniBook v1.4.4
+MiniBook v1.4.8
 noconsole
